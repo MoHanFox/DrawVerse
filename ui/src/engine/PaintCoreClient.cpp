@@ -1758,10 +1758,11 @@ bool PaintCoreClient::preferTransformMeshPreview() const {
         if(node.kind==PAINT_COMPOSITION_MASK)continue;
         if(node.layer_id==targets.front()){
             if(node.mask_index<quint32(m_compositionPacket->nodes.size()) || quint32(node.reserved)!=0)return false;
-            // Unselected small edits retain the exact path. A selected split
-            // benefits from immediate geometry even when its moving part is small.
+            // Exact composition currently damages the entire document for each
+            // geometry change. A sparse target on a large canvas needs the same
+            // cached mesh path as a large layer; target area alone is misleading.
             const quint64 area=std::max<quint64>(quint64(node.white_width)*node.white_height,quint64(node.tile_count)*4096);
-            if(area<=1024ull*1024 && !selectionEnabled())return false;
+            if(area<=1024ull*1024 && quint64(m_width)*m_height<=1024ull*1024 && !selectionEnabled())return false;
             found=true;
         }else if(found && quint32(node.reserved)!=0)return false;
     }
@@ -1811,7 +1812,7 @@ void PaintCoreClient::refreshCompositionTransform(const PaintTransform *geometry
     if(m_compositionEditFrame && m_compositionEditFrame->transform &&
        m_compositionEditFrame->transform->sourceBounds==t->sourceBounds &&
        std::memcmp(&m_compositionEditFrame->transform->geometry,&t->geometry,sizeof(PaintTransform))==0)return;
-    if(t->sourceBounds.isEmpty() || t->sourceBounds.width()>4096 || t->sourceBounds.height()>4096 ||
+    if(t->sourceBounds.isEmpty() ||
        std::abs(top.x())>1048576 || std::abs(top.y())>1048576){m_compositionFinalFallback=true;emit frameChanged();return;}
     t->display=dto<PaintTransformDisplayGeometry>();t->vertices=QByteArray(145*145*16,Qt::Uninitialized);
     const auto status=paint_transform_display_geometry(&t->geometry,&t->display,reinterpret_cast<float*>(t->vertices.data()),84100);
@@ -1889,7 +1890,7 @@ void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
     const bool retainSources=enabled && gpuCompositionEnabled() && !m_closing &&
         (m_transformActive || m_liquifyActive || m_layerMoveActive);
     enabled=enabled && gpuCompositionEnabled() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
-    const bool native=highestCanvasQuality() && quint64(m_width)*m_height<=CompositionBudget::viewPixels();
+    const bool native=highestCanvasQuality() && m_width<=8192 && m_height<=8192 && quint64(m_width)*m_height<=CompositionBudget::viewPixels();
     const QRectF targetRegion=native?QRectF(0,0,m_width,m_height):m_requestedRegions[0];
     const QSize targetPixels=native?QSize(int(m_width),int(m_height)):m_requestedPixels[0];
     enabled=enabled && targetPixels.width()<=8192 && targetPixels.height()<=8192 &&

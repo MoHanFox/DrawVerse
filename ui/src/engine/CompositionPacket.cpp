@@ -59,7 +59,7 @@ CompositionPacketPtr CompositionReader::poll(PaintCore *core,PaintSession *sessi
         const auto area=quint64(state.width)*state.height;
         const auto scale=std::min(view.region.width()/view.pixels.width(),view.region.height()/view.pixels.height());
         const int lod=scale>=1?std::clamp(int(std::floor(std::log2(scale))),0,20):0;
-        if(!area || area>CompositionBudget::viewPixels() || state.width>8192 || state.height>8192 || lod>6 ||
+        if(!area || lod>6 ||
            view.pixels.isEmpty() || view.pixels.width()>8192 || view.pixels.height()>8192 ||
            quint64(view.pixels.width())*view.pixels.height()>CompositionBudget::viewPixels()){
             fallback=QStringLiteral("CPU: composition extent/LOD budget");return {};

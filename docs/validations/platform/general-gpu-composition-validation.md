@@ -1108,3 +1108,59 @@ Qt slots宏冲突、QRectF声明编译失败均修复。新增编辑期间保留
 `build/history-handoff-delivery-build.log`；独立profile实际D3D11应用 `--preview` 冒烟退出0，
 生成 `build/history-handoff-smoke.png`，标准 `build/bin/Release/drawverse.exe` 已更新。
 构建后生产源仅有缩进修正，最终测试二进制与标准应用已重新链接。原PNG最终SHA256与初始一致。
+
+
+## 2026-11-01：大文档分页工作区定向验收
+
+本轮无 ABI/核心像素/文档格式变化。最新 D3D11 `build/paged-targeted-final3.txt`：8 个功能行通过（含 4 个大画布数据行、9000 宽蒙版/LOD 逐页线性与 CPU 窗口对照、普通/Warp 预览对最终原图、原连续绘画），连同 init/cleanup 为 10 passed、0 failed、0 skipped。8888×5000 及 17000×5000 在 10% 通过绘画、非中性曲线 GPU 预览、取消与撤销。非均匀 PNG 8888×5000 共 10981 个源瓦片：自动预算 GPU 计账 761535824 B，128 MiB 显式预算下 124001616 B；两者小笔触读 8 瓦片、damage 32768 像素。自动预算曲线源上传增量 0，128 MiB 页缓存曲线的两次显示共上传 21962 瓦片，说明预算内换页功能通过，但低预算曲线仍有明显带宽成本，不能称持续交互性能已解决。
+
+原始日志均保留：`paged-large-initial.txt` 对应初版 QRhi 页切换对象提前释放访问异常，修复后保留每页绑定/映射至安全 frame slot；`paged-pixels-first.txt` 的新夹具橡皮落在 64 高文档外，无历史，改为文档内坐标后原断言通过；`paged-targeted-final1/2.txt` 为中间实现定向结果。最初非 Developer Shell 缺 fxc/SDK include 的构建失败保留于本次会话，启用 VsDevCmd 后构建通过。
+
+`build/paged-full-d3d11.txt` 是一次未完整通过的宽泛运行，约 300 秒主动停止；52 个混合模式行因未设置 DRAWVERSE_G2_REPORT_DIR 失败，另有 LOD 两行、BUSY 两行、原生最高画质导航及平移视口断言失败，未据此声称全套通过。报告目录缺失后的独立混合模式复验另记，不能覆盖该原始运行。四 ABI 首次 CTest 因当前 build 下尚未链接可执行文件为 Not Run；构建四目标后四项均通过。实际 DXBC/双精度字段及当前 Release 嵌入 shader 精确字节检查通过，标准 drawverse_runtime 构建并更新。
+
+仍未验证用户原文档、实体输入/物理屏幕延迟、低预算持续曲线的体验或任意极端变形。原 CPU 传输/计划节点/瓦片预算及输出协议仍保留，未移除所有保护，也未跑总 check。
+
+补充收尾：最终独立根混合复验 `build/paged-root-regression.txt` 设置实际报告目录后 52 功能行通过（54 passed 含 init/cleanup）；软件 `build/paged-software-regression.txt` 的 7 个 documentPixels 行通过（9 passed）。软件初次因 Release 部署仅有 qwindows、缺 qoffscreen 启动阻塞，停止该测试并指定 SDK platforms 路径后通过，不改断言。标准 Release 使用独立 `build/PagedCompositionSmokeProfile`、D3D11 与 `--preview` 完成三笔绘画、截图 `build/paged-app-smoke.png`，退出 0，截图人工检查三笔可见。源树最后 diff 检查通过。
+
+
+## 2026-11-01：8888×5000 套索/整白层自由变换续修验收
+
+用户确认上一轮绘画卡顿解决后，本轮定位并删除三处无关整图硬门槛：选区 BEGIN 按文档面积 16Mi 像素拒绝、最终原图物化 16M 像素拒绝、UI 精确变换源宽高 4096 拒绝。选区范围扫描复用原保守边界；覆盖输出分成既有格式的横向掩码页，总量按驻留预算四分之一及原步骤/编码契约约束；原图按瓦片生成，逻辑瓦片预算/分页/故障原子性保持。无 ABI/文档格式变化。
+
+`build/large-transform-core-final.txt`：变换核心 34 passed、3 个原忽略；新增实际 8888×5000 白底/内容小套索普通与 Warp、稳定源/确认/单历史/撤销重做；整白层无选区及全选两种 44.44M 输出确认/撤销重做；大覆盖分页的页缝、原编码重开和真实预算不足拒绝。旧 5000² 固定面积失败夹具改为真实 max_document_tiles 不足，原失败后会话/源/历史断言保留。`build/large-transform-native-render-final.txt`：原生预览 6 passed，新增普通多层稀疏背景与偏移/白色覆盖逐像素对独立核心参考，RGBA8 通道差 ≤1；不安全栈保留一般渲染。`build/large-transform-ffi.txt`：相关公开接口 5 passed。核心/渲染 all-targets 严格 Clippy、fmt、生成头及四 ABI 通过。
+
+`build/large-transform-d3d11-confirmed.txt`：9 个功能行通过（11 passed 含 init/cleanup），包括 8888×5000 整白层普通缓存网格、最高画质精确分页、小套索白底确认、内容套索 Warp 取消；连续 24 个本地绝对输入源/图片缓存不变，精确路径源上传无增量，最新节点、历史及原小选区/9000 普通和 Warp/连续绘画回归通过。实际大白层 GPU 显示挖空与白色采样通过；选区测试仅建立移动源 CanvasItem，移动源截图与独立静止背景源分开检查，不等同产品全 QML 三源合成截图。最后一轮首次 controls/assets 白层普通 246/246ms、最高画质 51/52ms、白色小套索 428/428ms、内容小套索 440/441ms；计时采用 Qt 等待轮询且包含准备，不是实体笔或屏幕输入延迟。内容背景从整像素遍历改为普通稀疏编码后探索轮 8.4 秒准备未再出现，但非隔离消融/PhotoCraft 同期配对，不报告准确倍数。
+
+`build/large-transform-software.txt`：整白层、小套索白层与内容 Warp 三功能行通过（5 passed），未把软件路径作为性能目标。原始 `large-transform-d3d11-initial/second.txt` 保留：第一版仍有 UI 4096 拒绝、选区身份源/移动源切换的测试预期错误；`large-transform-d3d11-third.txt` 是修复后四功能通过。`large-transform-d3d11-final.txt` 和 `large-transform-pixel-investigation.txt` 等屏幕调查失败保留：默认白窗口不能识别透明，且单 CanvasItem 不包含产品另行组合的静止背景；最终明确三源职责后保留移动源与背景像素断言。原生预览首次回归的“多普通层必须拒绝”旧夹具因支持扩展失败，改用 Multiply 栈继续验证真正后备，未删除后备断言。
+
+标准 EXE 被用户运行进程占用，首次链接 LNK1104 保留于会话，未关闭用户进程或替换标准 EXE。独立 `build/bin/LargeCanvasTransformReview/drawverse.exe` 链接当前静态核心/UI并部署，嵌入 shader 检查通过；独立 profile、实际 D3D11 `--preview` 冒烟退出 0，`build/large-transform-app-smoke.png` 人工检查三笔可见。未跑总 check；未验证用户原文档、全范围复杂组/蒙版选区的跟手、实体输入或 PhotoCraft 配对，不声称所有资源保护已移除或性能等同。
+
+
+## 2026-11-01：普通画质大画布稀疏变换跟手续查
+
+用户明确最高画质未开启。实际 Main.qml、8888×5000、10%、1280×900 窗口、512MiB 显式 GPU/内存设置的调查，`build/large-drag-baseline.txt` 三行通过仅代表诊断完成：无选区小笔触走 exact，1.8 秒内 72 输入/63 帧，帧交换间隔 P95 33.685ms，累计 composedPixels 增量 8399160000、页表 5670、参数/绑定各 11340，源上传增量 0。整白层和小套索在该调查中已走 mesh，P95 17.119/15.907ms，不能把它们原来已快的持续路径也说成由本轮修复。此调查开启 trace；最终轮关闭 trace，无严格同构消融/PhotoCraft 配对结论。
+
+两处生产修改：安全普通画质路径同时参考文档和目标面积，小笔触不会仅因自身小而在大文档反复重算整图；选区捕获跳过无显式瓦片且不相交隐式白矩形的透明区域，按实际生成瓦片守原预算。最高画质/精确栈能力、最终六插值、核心确认/历史及 ABI/文件格式保持。9000 精确 shader 测试显式开启最高画质，继续验证精确分页；新增小目标默认普通缓存路径单独验证。
+
+最终 `build/large-drag-final-api-mesh.txt` 和 `build/large-drag-final-mouse-mesh.txt` 各 12 个功能行、14 passed（含 init/cleanup）、0 failed/skipped。六场景为整白层、小笔触、小笔触小套索、白层小套索、小笔触大套索、白层大套索，每项普通与 Warp。连续 1.8 秒/8ms 请求，API 轮 2460 输入/2097 匹配节点，窗口鼠标轮 2325 输入/2055 匹配节点；所有场景源 ID/三图 cacheKey 保持、源上传不重复、主 composedPixels 不增长，取消无新增历史。API 小笔触无选区帧间隔 P95 12.623ms；全部 API 行 P95 11.782–13.966ms，Qt 窗口鼠标行 12.261–17.028ms。完整网格采用至对应 frameSwapped 的输入年龄 P95 分别 11.877–13.831/12.096–14.357ms。这是本机 Qt 窗口事件和节点观察，不是实体设备、屏幕光学或操作系统输入端到端延迟。
+
+大套索小笔触准备单轮约 2564ms（`large-drag-route-fix-ordinary-4.json`）→最终 API 约 0.8 秒、鼠标普通/Warp 770/901ms；含 Qt 等待轮询，不报告精确倍数。整白层大套索仍约 2.1–2.3 秒首次准备，未解决秒级进入/所有复杂图层栈，也不承诺 PhotoCraft 同等体验。首次准备和持续拖动分开报告。
+
+`build/large-drag-core.txt` 核心变换 35 passed、3 原忽略；新增全画布选区、单瓦片笔触、逻辑预算仅两瓦片仍保留 deferred、像素拆分/稳定源/20 更新/取消历史，避免透明矩形估算造成错误后备。原羽化/全部插值最终像素独立比较继续通过。`large-drag-ffi.txt` 公开接口 5 passed。`large-drag-regressions-d3d11.txt` 原相关 49 功能行（51 passed），精确六插值/透视/Warp/分页、最高画质、源复用/拓扑/选区、快关闭与后备；另 `large-drag-sparse-handoff-d3d11.txt` 新无选区小目标普通确认/Warp取消、选区普通确认三行通过，含实际蓝色移动像素及确认后撤销重做。软件对应原七功能行和新三功能行分别 9/5 passed，日志 `large-drag-software.txt`、`large-drag-sparse-handoff-software.txt`。核心/渲染 all-targets 严格 Clippy、fmt、生成头、重链接四 ABI 和 diff whitespace 通过。
+
+原始调查/失败保留：`large-drag-baseline-build.txt` 缺观察者完整类型、`large-drag-fix-build.txt` QList 夹具类型错误，修正后构建通过；首轮 `large-drag-final-mouse.txt` 两个小选区 Warp 行因为只用不动的外角观察内控制点而失败，保留原失败，最终改用整份网格 hash 匹配，未放宽实际节点更新/源复用断言。`large-drag-abi.txt` 使用宽泛 -R abi 误匹配 stability 未构建目标 Not Run；准确 -R ^abi_ 的 `large-drag-abi-final.txt` 四项通过，不称未构建 stability 已测。
+
+标准 EXE 被 PID7440 用户进程占用，`large-drag-final-build.txt` 的 LNK1104 保留，未关闭用户程序。独立 `build/bin/LargeCanvasTransformReview/drawverse.exe` 已静态链接新 UI/核心并部署，SHA256 728598FFC401396297ADB6B40FDEAA1BA18A9CDFF0A7D89C1BF0B055B11A8083；嵌入 shader 精确检查通过，独立 profile 实际 D3D11 冒烟退出 0，`large-drag-app-smoke.png` 人工检查三笔正常。未运行总 check，用户原文档、真实设备与物理屏幕手感仍需实测。
+
+
+## 2026-11-01：用户仍感滞后后的 PhotoCraft 会话源码对照
+
+用户在最高画质关闭、8888×5000 下仍反馈不跟手，观察到 PhotoCraft 的 Ctrl+T 首次停顿及其后流畅拖动。本节为本地源码核查，未修改生产行为，未新增性能通过结论；前一节 Qt 合成输入结果不能取代该用户反馈。运行中的标准包及 LargeCanvasTransformReview 均保留。
+
+本地 PhotoCraft `crates/ui-egui/src/transform_tool.rs::begin` 在进入时完成 selected/rest 拆分、静止背景/上层捕获、移动源读取和 PreviewTextures 创建。`pointer` 直接修改 UI TransformSession 的 quad/warp；普通像素提交的 edit.transform / edit.transform.warp 在 commit 中执行。`draw_content` 普通透视使用 24×24 网格；`transform_tex.rs::choose` 按 zoom×scale 选缓存 mip，缩小时 floor(log2(1/s))，不是持续按原图逐像素重采样。10%/DPR1/单位变换比例/非邻近插值时选择 level3，8888×5000 对应约1111×625；改变 DPR、缩放及插值会改变选择。完整源和最终确认仍独立保留。
+
+DrawVerse 已有缓存三源、本地几何直发及 mip，但 `PaintCoreClient::updateTransform` 仍对每个输入 submitTransform(UPDATE)，然后本地生成显示几何；核心 deferred UPDATE 仍 dirty_all，经 worker 发布 resident 网格后 GUI 再用最新输入重投影。因此纹理复用并不等价于整个会话只在 UI/GPU 交互。`TransformMesh::new` 按文档坐标跨度细分，上限145×145，普通透视也采用这一密度；该工作与 PhotoCraft 的显示网格策略存在差异。两处均是进一步剖析候选，尚无分阶段消融证明其为用户剩余滞后的主导原因。
+
+选区观察与本地参考版本存在差异：PhotoCraft 当前 `carries_selection` / `draw_selection` 明确为普通自由变换映射原轮廓，实际 Transform Selection 的另一入口才在预览副本清 selection。不能把预览轮廓隐藏直接等同于原选区数据删除，也不能推定用户运行版本与本地源码相同。清除原选区涉及取消/历史语义，本轮不据观察擅自改变。
+
+后续会话改造的边界：进入后冻结不可变像素与原始选区，显示仅采用最新本地几何并按显示尺寸细分；对核心的几何同步离开逐输入显示关键路径，同时在 checkpoint/确认/撤销重做/显式核心取样前保持权威顺序，拒绝旧回调覆盖本地新几何。取消恢复完整原状态。必须分别验证高频真实窗口输入、最后绝对位置、快确认/取消及 CPU/最高画质后备，不能只以纹理上传次数为性能验收。

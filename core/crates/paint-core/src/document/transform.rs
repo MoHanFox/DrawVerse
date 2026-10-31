@@ -4,6 +4,9 @@ use std::collections::VecDeque;
 mod image_flip;
 #[path = "image_rotate.rs"]
 mod image_rotate;
+#[cfg(test)]
+#[path = "transform_large_tests.rs"]
+mod large_tests;
 #[path = "transform_mesh.rs"]
 mod mesh;
 #[path = "transform_preview.rs"]
@@ -528,17 +531,16 @@ impl Document {
             None
         };
         if let Some(selection) = &selected {
-            if (self.width as usize).saturating_mul(self.height as usize)
-                > crate::MAX_SELECTION_MASK_BYTES
-            {
-                return Err(Error::ResourceLimit("selection transform coverage"));
-            }
+            // Discover exact coverage only inside the conservative selection bounds.
+            // A small lasso on a large document needs one row, never a full-canvas mask.
+            let [left, top, right, bottom] = self.selection_pixel_bounds()?;
             let mut bounds = None::<[u32; 4]>;
-            let mut coverage = vec![0.; self.width as usize];
-            for y in 0..self.height {
-                selection.coverage_span(0.5, y as f64 + 0.5, &mut coverage);
+            let mut coverage = vec![0.; (right - left).max(0) as usize];
+            for y in top..bottom {
+                selection.coverage_span(left as f64 + 0.5, y as f64 + 0.5, &mut coverage);
                 for (x, &alpha) in coverage.iter().enumerate() {
-                    let x = x as u32;
+                    let x = (left + x as i64) as u32;
+                    let y = y as u32;
                     if alpha > 0. {
                         bounds = Some(bounds.map_or([x, y, x + 1, y + 1], |b| {
                             [b[0].min(x), b[1].min(y), b[2].max(x + 1), b[3].max(y + 1)]
@@ -870,10 +872,13 @@ impl Document {
         let width = (x1 - x0).max(1) as u32;
         let height = (y1 - y0).max(1) as u32;
         let count = (width as usize).saturating_mul(height as usize);
-        if count > crate::MAX_SELECTION_MASK_BYTES {
-            return Err(Error::ResourceLimit("selection transform coverage"));
+        let page_rows = (crate::MAX_SELECTION_MASK_BYTES / width as usize).max(1);
+        let page_count = (height as usize).div_ceil(page_rows);
+        let coverage_budget = self.options.max_resident_tiles.saturating_mul(TILE_BYTES) / 4;
+        if count > coverage_budget || page_count > crate::MAX_SELECTION_STEPS {
+            return Err(Error::ResourceLimit("selection transform coverage budget"));
         }
-        let mut coverage = vec![0u8; count];
+        let mut steps = Vec::new();
         let inverse = geometry.inverse_matrix();
         let origin = initial.points[0];
         let w = initial.points[3][0] - origin[0];
@@ -888,52 +893,76 @@ impl Document {
             (((x1 + 63).div_euclid(64) - x0.div_euclid(64)).max(0)
                 * ((y1 + 63).div_euclid(64) - y0.div_euclid(64)).max(0)) as usize,
         );
-        for ty in y0.div_euclid(64)..(y1 + 63).div_euclid(64) {
-            for tx in x0.div_euclid(64)..(x1 + 63).div_euclid(64) {
-                let uv_tile = raster.as_ref().map(|r| r.tile_uvs(tx, ty));
-                for y in y0.max(ty * 64)..((ty + 1) * 64).min(y1) {
-                    for x in x0.max(tx * 64)..((tx + 1) * 64).min(x1) {
-                        let px = x as f64 + 0.5;
-                        let py = y as f64 + 0.5;
-                        let uv = if let Some(tile) = &uv_tile {
-                            let p = tile[(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize];
-                            p[0].is_finite().then_some(p)
-                        } else if let Some(m) = inverse {
-                            let z = m[6] * px + m[7] * py + m[8];
-                            let u = (m[0] * px + m[1] * py + m[2]) / z;
-                            let v = (m[3] * px + m[4] * py + m[5]) / z;
-                            ((0. ..=1.).contains(&u) && (0. ..=1.).contains(&v)).then_some([u, v])
-                        } else {
-                            None
-                        };
-                        if let Some([u, v]) = uv {
-                            coverage[(y - y0) as usize * width as usize + (x - x0) as usize] =
-                                (selection.coverage(origin[0] + u * w, origin[1] + v * h) * 255.)
-                                    .round() as u8;
+        for page_y in (y0..y0 + i64::from(height)).step_by(page_rows) {
+            let page_end = (page_y + page_rows as i64).min(y0 + i64::from(height));
+            let page_height = (page_end - page_y) as u32;
+            let length = width as usize * page_height as usize;
+            let mut coverage = Vec::new();
+            coverage
+                .try_reserve_exact(length)
+                .map_err(|_| Error::ResourceLimit("selection transform allocation"))?;
+            coverage.resize(length, 0u8);
+            for ty in page_y.div_euclid(64)..(page_end + 63).div_euclid(64) {
+                for tx in x0.div_euclid(64)..(x1 + 63).div_euclid(64) {
+                    let uv_tile = raster.as_ref().map(|r| r.tile_uvs(tx, ty));
+                    for y in page_y.max(ty * 64)..((ty + 1) * 64).min(page_end).min(y1) {
+                        for x in x0.max(tx * 64)..((tx + 1) * 64).min(x1) {
+                            let px = x as f64 + 0.5;
+                            let py = y as f64 + 0.5;
+                            let uv = if let Some(tile) = &uv_tile {
+                                let p = tile[(y.rem_euclid(64) * 64 + x.rem_euclid(64)) as usize];
+                                p[0].is_finite().then_some(p)
+                            } else if let Some(m) = inverse {
+                                let z = m[6] * px + m[7] * py + m[8];
+                                let u = (m[0] * px + m[1] * py + m[2]) / z;
+                                let v = (m[3] * px + m[4] * py + m[5]) / z;
+                                ((0. ..=1.).contains(&u) && (0. ..=1.).contains(&v))
+                                    .then_some([u, v])
+                            } else {
+                                None
+                            };
+                            if let Some([u, v]) = uv {
+                                coverage
+                                    [(y - page_y) as usize * width as usize + (x - x0) as usize] =
+                                    (selection.coverage(origin[0] + u * w, origin[1] + v * h)
+                                        * 255.)
+                                        .round() as u8;
+                            }
                         }
                     }
+                    self.progress_advance(1);
                 }
-                self.progress_advance(1);
             }
-        }
-        let mut shape = crate::SelectionShape::geometry(
-            crate::SelectionKind::Rectangle,
-            x0 as f64,
-            y0 as f64,
-            width as f64,
-            height as f64,
-            false,
-        );
-        shape.kind = crate::SelectionKind::Mask;
-        shape.mask = Some(crate::SelectionMask::from_alpha(width, height, coverage)?);
-        crate::Selection::from_steps(
-            true,
-            vec![crate::SelectionStep {
-                operation: crate::SelectionOperation::Replace,
+            let mut shape = crate::SelectionShape::geometry(
+                crate::SelectionKind::Mask,
+                x0 as f64,
+                page_y as f64,
+                width as f64,
+                page_height as f64,
+                false,
+            );
+            shape.mask = Some(crate::SelectionMask::from_alpha(
+                width,
+                page_height,
+                coverage,
+            )?);
+            steps.push(crate::SelectionStep {
+                operation: if steps.is_empty() {
+                    crate::SelectionOperation::Replace
+                } else {
+                    crate::SelectionOperation::Add
+                },
                 shape: Some(shape),
-            }],
-        )
+            });
+        }
+        let result = crate::Selection::from_steps(true, steps)?;
+        // Every published selection must remain readable by the existing history/IO codec.
+        if result.to_text().len() > 1024 * 1024 {
+            return Err(Error::ResourceLimit("selection transform encoding"));
+        }
+        Ok(result)
     }
+
     fn render_transform_target(
         &self,
         original: &Layer,
@@ -1009,8 +1038,15 @@ impl Document {
         let y0 = extent[1].floor() as i64;
         let x1 = extent[2].ceil() as i64;
         let y1 = extent[3].ceil() as i64;
-        if x1 <= x0 || y1 <= y0 || (x1 - x0).saturating_mul(y1 - y0) > 16_777_216 {
-            return Err(Error::ResourceLimit("transform output pixels"));
+        if x1 <= x0 || y1 <= y0 {
+            return Err(Error::InvalidArgument("empty transform output"));
+        }
+        // Materialisation already uses one 64x64 page at a time. Bound work by
+        // the document's negotiated tile budget, not an unrelated image area.
+        let columns = (x1 - 1).div_euclid(64) - x0.div_euclid(64) + 1;
+        let rows = (y1 - 1).div_euclid(64) - y0.div_euclid(64) + 1;
+        if (columns as usize).saturating_mul(rows as usize) > self.options.max_document_tiles {
+            return Err(Error::ResourceLimit("transform tile coverage"));
         }
         let raster = warp_mesh
             .as_ref()

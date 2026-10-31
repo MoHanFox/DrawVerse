@@ -17,6 +17,7 @@ layout(std140,binding=0) uniform Parameters {
     dvec4 inverse0;
     dvec4 inverse1;
     dvec4 inverse2;
+    layout(offset=256) ivec4 page;
 };
 layout(binding=1) uniform sampler2D backdrop;
 layout(binding=2) uniform sampler2D atlas;
@@ -82,7 +83,7 @@ bool topLeft(dvec4 a,dvec4 b){return b.y<a.y || (b.y==a.y && b.x>a.x);}
 bool outside(double value,dvec4 a,dvec4 b){return value<0.0 || (value==0.0 && !topLeft(a,b));}
 #endif
 void main(){
-    precise dvec2 p=dvec2(gl_FragCoord.xy);precise dvec2 coordinates;
+    precise dvec2 p=dvec2(gl_FragCoord.xy)+dvec2(page.xy);precise dvec2 coordinates;
 #ifdef WARP
     dvec4 a=dvec4(triangleA),b=dvec4(triangleB),c=dvec4(triangleC);
     precise double area=edge(a,b,c.xy);
@@ -97,6 +98,6 @@ void main(){
     coordinates=dvec2(inverse0.x*p.x+inverse0.y*p.y+inverse0.z,inverse1.x*p.x+inverse1.y*p.y+inverse1.z)/z;
     vec4 s=vec4(0);
     if(all(greaterThanEqual(coordinates,dvec2(0))) && all(lessThanEqual(coordinates,dvec2(1))))s=transformed(coordinates)*factors.x;
-    color=s+texelFetch(backdrop,ivec2(p),0)*(1.0-s.a);
+    color=s+texelFetch(backdrop,ivec2(p)-page.xy,0)*(1.0-s.a);
 #endif
 }

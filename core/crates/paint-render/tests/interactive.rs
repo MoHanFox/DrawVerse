@@ -74,7 +74,10 @@ fn native_preview_matches_reference_with_offsets_white_edges_and_alpha() {
                     RenderError::Cancelled
                 );
             }
-            doc.add_layer("complex fallback").unwrap();
+            let extra = doc.add_layer("complex fallback").unwrap();
+            let mut appearance = doc.layer(extra).unwrap().appearance();
+            appearance.blend = BlendMode::Multiply;
+            doc.set_layer_appearance(extra, appearance).unwrap();
             let request = RenderRequest {
                 region: Region {
                     x: 0.,
@@ -389,6 +392,73 @@ fn sparse_large_canvas_preview_keeps_exact_samples_and_clips_empty_viewports() {
                         pixels[(y * frame.width + x) as usize],
                         expected.components()
                     );
+                }
+            }
+        }
+    }
+}
+
+#[test]
+fn native_sparse_stack_matches_linear_reference_with_offsets_and_white_overrides() {
+    for white_above in [false, true] {
+        let mut doc = Document::new(193, 137).unwrap();
+        doc.initialize_white_background().unwrap();
+        for (i, (x, y)) in [(-17, -9), (1, 1), (71, 35)].into_iter().enumerate() {
+            let id = doc.add_layer("sparse").unwrap();
+            if white_above && i == 1 {
+                doc.bucket_fill(BucketFill {
+                    x: 0,
+                    y: 0,
+                    color: Pixel::WHITE,
+                    opacity: 1.,
+                    tolerance: 0,
+                    antialias: false,
+                    contiguous: true,
+                    all_layers: false,
+                })
+                .unwrap();
+            }
+            doc.begin_stroke(
+                Brush {
+                    radius: 22.,
+                    color: Pixel::from_straight([0.1 + i as f32 * 0.2, 0.7, 0.3, 0.43]).unwrap(),
+                    ..Default::default()
+                },
+                InputPoint::new(64., 60., 1.),
+            )
+            .unwrap();
+            doc.end_stroke().unwrap();
+            let mut a = doc.layer(id).unwrap().appearance();
+            a.offset_x = x;
+            a.offset_y = y;
+            doc.set_layer_appearance(id, a).unwrap();
+        }
+        for (x, y, w, h) in [(0., 0., 193, 137), (23., 7., 129, 91)] {
+            let snapshot = doc.snapshot();
+            let request = RenderRequest {
+                region: Region {
+                    x,
+                    y,
+                    width: w as f64,
+                    height: h as f64,
+                },
+                width: w,
+                height: h,
+                format: PixelFormat::SrgbRgba8Premultiplied,
+            };
+            let frame = render_native_preview(&snapshot, request, &CancellationToken::default())
+                .unwrap()
+                .unwrap();
+            let FramePixels::Srgb(bytes) = frame.pixels else {
+                panic!()
+            };
+            for dy in 0..h {
+                for dx in 0..w {
+                    let expected =
+                        display_pixel(snapshot.pixel(x as u32 + dx, y as u32 + dy).components());
+                    for k in 0..4 {
+                        assert!(bytes[((dy * w + dx) * 4) as usize + k].abs_diff(expected[k]) <= 1);
+                    }
                 }
             }
         }

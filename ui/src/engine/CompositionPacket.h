@@ -24,7 +24,8 @@ struct CompositionBudget {
     // The source pool includes the displayed, replacement and in-flight packets.
     static constexpr int maxTiles=65536;
     static quint64 transportLimit(){return memoryBytes.load()/2;}
-    static quint64 planPinLimit(){return std::min({transportLimit()/2,gpuBytes.load(),quint64(maxTiles)*65536});}
+    // CPU source leases may exceed GPU residency: the render node pages them.
+    static quint64 planPinLimit(){return std::min(transportLimit()/2,quint64(maxTiles)*65536);}
     static quint64 cpuViewPixels(){return std::min<quint64>(16777216,(memoryBytes.load()-std::min(cacheBytes.load(),memoryBytes.load()/2))/64);}
     static quint64 viewPixels(){return std::min<quint64>(16777216,gpuBytes.load()/4);}
 };

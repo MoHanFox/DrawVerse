@@ -10,6 +10,7 @@ layout(std140,binding=0) uniform Parameters {
     vec4 factors; // raster opacity*fill, mask density, LOD block, display pass
     layout(offset=224) vec4 adjustmentSettings;
     vec4 adjustmentMode; // enabled, LUT/HSL, reserved
+    ivec4 page; // document origin and reusable work extent
 };
 layout(binding=1) uniform sampler2D backdrop;
 layout(binding=2) uniform sampler2D atlas;
@@ -122,15 +123,15 @@ vec4 blend(vec4 s,vec4 d,int mode,ivec2 p,uint seed){
 }
 void main(){
     if(factors.w>4.5){
-        ivec2 p=ivec2(uv*vec2(dimensions.xy));vec4 d=texelFetch(backdrop,p,0);
+        ivec2 p=ivec2(uv*vec2(page.zw))+page.xy;vec4 d=texelFetch(backdrop,p-page.xy,0);
         int op=int(factors.w);if(op==5){color=d;return;}
         bool raster=op==8 || op==10;
-        precise vec4 s=raster?adjustSource(sampleSource(p,sourceInfo,sourceOrigin.xy,sourceMap)):texelFetch(sourceMap,p,0);
+        precise vec4 s=raster?adjustSource(sampleSource(p,sourceInfo,sourceOrigin.xy,sourceMap)):texelFetch(sourceMap,p-page.xy,0);
         precise float mask=1.0-(factors.y>0.0?sampleSource(p,maskInfo,maskOrigin.xy,maskMap).a*factors.y:0.0);
         if(op==8 || op==9){color=s*mask;return;}
         if(op==6 || op==13){if(op==6)s*=mask;s*=factors.x;color=blend(s,d,sourceOrigin.z,p,uint(sourceOrigin.w));return;}
         if(op==7){color=all(equal(d,s))?d:pixelMix(d,s,factors.x*mask);return;}
-        float coverage=maskOrigin.z!=0?texelFetch(coverageMap,p,0).a:1.0;
+        float coverage=maskOrigin.z!=0?texelFetch(coverageMap,p-page.xy,0).a:1.0;
         if(op==12){
             if(all(equal(d,s))){color=d;return;}
             vec4 c=s.a==0.0?vec4(0):vec4((s.rgb/s.a)*d.a,d.a);
@@ -148,29 +149,31 @@ void main(){
         }
         color=pixelMix(d,next,coverage);return;
     }
-    if(factors.w>3.5){ivec2 p=ivec2(uv*vec2(dimensions.xy));vec4 s=texelFetch(atlas,p,0);color=s+texelFetch(backdrop,p,0)*(1.0-s.a);return;}
+    if(factors.w>3.5){ivec2 p=ivec2(uv*vec2(page.zw))+page.xy;vec4 s=texelFetch(atlas,p-page.xy,0);color=s+texelFetch(backdrop,p-page.xy,0)*(1.0-s.a);return;}
     if(factors.w>1.5){color=vec4(0);return;}
     if(factors.w<0.5){
-        ivec2 point=ivec2(uv*vec2(dimensions.xy));
+        ivec2 point=ivec2(uv*vec2(page.zw))+page.xy;
         precise vec4 s=adjustSource(sampleSource(point,sourceInfo,sourceOrigin.xy,sourceMap));
         precise float hidden=factors.y>0.0?sampleSource(point,maskInfo,maskOrigin.xy,maskMap).a*factors.y:0.0;
         s*=1.0-hidden;
         s*=factors.x;
-        color=blend(s,texelFetch(backdrop,point,0),sourceOrigin.z,point,uint(sourceOrigin.w));
+        color=blend(s,texelFetch(backdrop,point-page.xy,0),sourceOrigin.z,point,uint(sourceOrigin.w));
     }else{
         ivec2 outputPoint=ivec2(uv*vec2(dimensions.zw));
         // Axis tables are prepared using the CPU reference's f64 pixel-center
         // mapping. Average the already-composited source, never individual layers.
         ivec2 point=ivec2(int(texelFetch(atlas,ivec2(outputPoint.x,0),0).r),
                          int(texelFetch(sourceMap,ivec2(outputPoint.y,0),0).r));
-        if(any(lessThan(point,ivec2(0)))){color=vec4(0);return;}
+        if(any(lessThan(point,ivec2(0)))){if(sourceInfo.x==0)discard;color=vec4(0);return;}
         int block=int(factors.z);
         ivec2 begin=(point/block)*block;
         ivec2 end=min(begin+ivec2(block),dimensions.xy);
+        if(any(lessThan(begin,page.xy)) || any(greaterThanEqual(begin,page.xy+page.zw)))discard;
+        if(maskInfo.z>0 && (any(lessThan(begin,maskInfo.xy)) || any(greaterThanEqual(begin,maskInfo.xy+maskInfo.zw))))discard;
         vec4 s=vec4(0);
         float weight=1.0/float((end.x-begin.x)*(end.y-begin.y));
         for(int y=begin.y;y<end.y;++y)for(int x=begin.x;x<end.x;++x)
-            s+=texelFetch(backdrop,ivec2(x,y),0)*weight;
+            s+=texelFetch(backdrop,ivec2(x,y)-page.xy,0)*weight;
         float a=clamp(s.a,0.0,1.0);
         vec3 v=a>0.0?clamp(s.rgb/a,0.0,1.0):vec3(0);
         vec3 encoded=mix(1.055*pow(v,vec3(1.0/2.4))-0.055,12.92*v,lessThanEqual(v,vec3(0.0031308)));

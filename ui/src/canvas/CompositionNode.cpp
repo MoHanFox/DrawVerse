@@ -81,8 +81,9 @@ struct Parameters {
     std::array<float,4> factors{},transformBounds{},transformInfo{};
     std::array<double,4> inverse0{},inverse1{},inverse2{};
     std::array<float,4> adjustmentSettings{},adjustmentMode{};
+    std::array<qint32,4> page{};
 };
-static_assert(sizeof(Parameters)==256);
+static_assert(sizeof(Parameters)==272);
 static_assert(offsetof(Parameters,inverse0)==128 && offsetof(Parameters,inverse1)==160 && offsetof(Parameters,inverse2)==192);
 class DirectTexture final : public QSGTexture {
 public:
@@ -203,21 +204,89 @@ private:
         t.pass.reset(t.target->newCompatibleRenderPassDescriptor());t.target->setRenderPassDescriptor(t.pass.get());
         return t.target->create();
     }
-    static int requiredAtlasCapacity(const CompositionPacketPtr &p){
-        QSet<quint64> sources;for(const auto &tile:p->tiles)sources.insert(tile.content_id);
-        const int count=int(sources.size());if(count<=32)return 32;
-        // Grow in modest aligned chunks; a new layer need not double VRAM.
-        return std::min(CompositionBudget::maxTiles,((count+std::min(512,count/8)+255)/256)*256);
+    QRect pageSourceRect(const CompositionPacketPtr &p,int node,const QRect &rect)const{
+        if(!p->transform || p->transform->node!=node)return rect;
+        const auto &t=*p->transform;
+        if(t.geometry.warp){
+            const auto *v=reinterpret_cast<const float*>(t.vertices.constData());
+            double u0=1,v0=1,u1=0,v1=0;bool found=false;
+            for(quint32 y=0;y+1<t.display.rows;++y)for(quint32 x=0;x+1<t.display.columns;++x){
+                const quint32 a=y*t.display.columns+x,b=a+1,c=a+t.display.columns,d=c+1;
+                for(const auto tri:std::array<std::array<quint32,3>,2>{{{a,b,d},{a,d,c}}}){
+                    float x0=INFINITY,y0=INFINITY,x1=-INFINITY,y1=-INFINITY;
+                    for(auto i:tri){x0=std::min(x0,v[i*4]);y0=std::min(y0,v[i*4+1]);x1=std::max(x1,v[i*4]);y1=std::max(y1,v[i*4+1]);}
+                    if(x1<rect.left() || y1<rect.top() || x0>rect.right()+1 || y0>rect.bottom()+1)continue;
+                    found=true;
+                    for(auto i:tri){u0=std::min(u0,double(v[i*4+2]));v0=std::min(v0,double(v[i*4+3]));u1=std::max(u1,double(v[i*4+2]));v1=std::max(v1,double(v[i*4+3]));}
+                }
+            }
+            if(!found)return QRect(-8,-8,1,1);
+            return QRectF(t.sourceBounds.x()+u0*t.sourceBounds.width(),t.sourceBounds.y()+v0*t.sourceBounds.height(),(u1-u0)*t.sourceBounds.width(),(v1-v0)*t.sourceBounds.height()).toAlignedRect().adjusted(-3,-3,3,3);
+        }
+        const auto &m=t.display.inverse;
+        QRectF bounds;bool first=true;double sign=0;
+        for(const QPointF corner:{QPointF(rect.left(),rect.top()),QPointF(rect.right()+1,rect.top()),QPointF(rect.left(),rect.bottom()+1),QPointF(rect.right()+1,rect.bottom()+1)}){
+            const double z=m[6]*corner.x()+m[7]*corner.y()+m[8];
+            if(!std::isfinite(z) || std::abs(z)<1e-12 || (sign && sign*z<0))return t.sourceBounds.toAlignedRect().adjusted(-2,-2,2,2);
+            sign=z;
+            const QPointF uv((m[0]*corner.x()+m[1]*corner.y()+m[2])/z,(m[3]*corner.x()+m[4]*corner.y()+m[5])/z);
+            const QPointF point(t.sourceBounds.x()+uv.x()*t.sourceBounds.width(),t.sourceBounds.y()+uv.y()*t.sourceBounds.height());
+            if(first){bounds=QRectF(point,QSizeF(.000001,.000001));first=false;}else bounds=bounds.united(QRectF(point,QSizeF(.000001,.000001)));
+        }
+        return bounds.intersected(t.sourceBounds.adjusted(-3,-3,3,3)).toAlignedRect().adjusted(-3,-3,3,3);
+    }
+    QVector<int> pageTiles(const CompositionPacketPtr &p,const QRect &rect)const{
+        QVector<int> result;
+        for(int n=0;n<p->nodes.size();++n){
+            const auto &node=p->nodes[n];const auto source=pageSourceRect(p,n,rect);
+            for(quint32 i=node.first_tile;i<node.first_tile+node.tile_count;++i){
+                const auto &tile=p->tiles[int(i)];
+                const qint64 x=qint64(tile.tile_x)*64+node.offset_x,y=qint64(tile.tile_y)*64+node.offset_y;
+                if(x<qint64(source.right())+1 && y<qint64(source.bottom())+1 && x+64>source.left() && y+64>source.top())result.append(int(i));
+            }
+        }
+        return result;
+    }
+    int requiredAtlasCapacity(const CompositionPacketPtr &p)const{
+        if(capacityPacket==p)return capacityValue;
+        QSet<quint64> allSources;for(const auto &tile:p->tiles)allSources.insert(tile.content_id);
+        capacityTotal=int(allSources.size());
+        int count=0;
+        if(paged(p)){
+            const auto work=workSize(p);
+            for(int y=0;y<int(p->info.document_height);y+=work.height())for(int x=0;x<int(p->info.document_width);x+=work.width()){
+                QSet<quint64> sources;for(int i:pageTiles(p,QRect({x,y},work)))sources.insert(p->tiles[i].content_id);
+                count=std::max(count,int(sources.size()));
+            }
+        }else{QSet<quint64> sources;for(const auto &tile:p->tiles)sources.insert(tile.content_id);count=int(sources.size());}
+        capacityPacket=p;capacityValue=count<=32?32:std::min(CompositionBudget::maxTiles,((count+std::min(512,count/8)+255)/256)*256);
+        return capacityValue;
     }
     QSize atlasSize(int capacity)const{
         const int rows=rhi->resourceLimit(QRhi::TextureSizeMax)/64;
         int columns=32;while((capacity+columns-1)/columns>rows && columns<rows)columns*=2;
         return {columns*64,((capacity+columns-1)/columns)*64};
     }
+    QSize workSize(const CompositionPacketPtr &p)const{
+        const QSize doc(int(p->info.document_width),int(p->info.document_height));
+        return paged(p)?QSize(std::min(1024,doc.width()),std::min(1024,doc.height())):doc;
+    }
+    bool paged(const CompositionPacketPtr &p)const{
+        return p->info.document_width>8192 || p->info.document_height>8192 ||
+            quint64(p->info.document_width)*p->info.document_height>16777216;
+    }
     quint64 payloadCharge(const CompositionPacketPtr &p,int atlasSlots)const{
         const quint64 surfaces=quint64(p->surfaceCount)+(scratch.texture || (p->transform && p->transform->geometry.warp)?1:0);
-        return quint64(atlasSlots)*65536+quint64(p->info.document_width)*p->info.document_height*16*surfaces+
-            quint64(p->pixels.width())*p->pixels.height()*4+4ull*1024*1024+80ull*1024;
+        quint64 metadata=4ull*1024*1024+80ull*1024;
+        if(paged(p)){
+            const auto work=workSize(p);
+            const quint64 pages=quint64((p->info.document_width+work.width()-1)/work.width())*((p->info.document_height+work.height()-1)/work.height());
+            // Page maps and bindings survive until their frame slot is safe.
+            // The atlas and linear work surfaces are reused in command order.
+            metadata+=pages*(quint64(p->nodes.size())*8192+(quint64(p->operations.size())+p->nodes.size()+2)*1024)*quint64(std::max(1,inFlightFrames));
+        }
+        return quint64(atlasSlots)*65536+quint64(workSize(p).width())*workSize(p).height()*16*surfaces+
+            quint64(p->pixels.width())*p->pixels.height()*4+metadata;
     }
     int historyAtlasCapacity(const CompositionPacketPtr &p)const{
         const int minimum=requiredAtlasCapacity(p);
@@ -228,9 +297,12 @@ private:
         const quint64 available=budget-std::min(budget,reserved-std::min(reserved,own));
         const auto base=payloadCharge(p,0);
         const auto availableSlots=available>base?(available-base)/65536:0;
-        int desired=int(std::min({quint64(minimum)*2,quint64(CompositionBudget::maxTiles),availableSlots}));
+        const quint64 desiredSources=paged(p)?quint64(std::max(minimum,capacityTotal)):quint64(minimum)*2;
+        int desired=int(std::min({desiredSources,quint64(CompositionBudget::maxTiles),availableSlots}));
         const int alignment=minimum<=256?32:256;
         desired=std::max(minimum,(desired/alignment)*alignment);
+        const int full=((capacityTotal+alignment-1)/alignment)*alignment;
+        if(paged(p) && full<=CompositionBudget::maxTiles && quint64(full)<=availableSlots)desired=std::max(desired,full);
         const auto extent=atlasSize(desired);const int limit=rhi->resourceLimit(QRhi::TextureSizeMax);
         return extent.width()<=limit && extent.height()<=limit?desired:minimum;
     }
@@ -246,6 +318,7 @@ private:
     bool prepareTargets(){
         const QSize doc(int(packet->info.document_width),int(packet->info.document_height));
         const auto pixels=packet->pixels;
+        const auto work=workSize(packet);
         const auto needed=requiredAtlasCapacity(packet)>atlasCapacity?historyAtlasCapacity(packet):atlasCapacity;
         if(needed>atlasCapacity){
             if(!reserveTargets(packet,needed))return false;
@@ -256,7 +329,7 @@ private:
         }
         if(packet->transform && counters->preciseTransform.load()!=1)return fail("CPU: precise transform device capability");
         if(packet->transform && packet->transform->geometry.warp && !scratch.texture){
-            if(!reserveTargets(packet) || !createTarget(scratch,QRhiTexture::RGBA32F,doc))return fail("CPU: composition transform target budget/allocation");
+            if(!reserveTargets(packet) || !createTarget(scratch,QRhiTexture::RGBA32F,work))return fail("CPU: composition transform target budget/allocation");
         }
         const bool topology=groupTargets.size()!=size_t(packet->surfaceCount-2);
         if(doc==documentSize && pixels==outputSize && !topology)return true;
@@ -266,13 +339,13 @@ private:
         if(!reserveTargets(packet))return false;
         if(doc!=documentSize || topology){
             groupTargets.clear();groupTargets.resize(size_t(packet->surfaceCount-2));
-            for(auto &t:groupTargets)if(!createTarget(t,QRhiTexture::RGBA32F,doc))return fail("CPU: composition group target allocation");
+            for(auto &t:groupTargets)if(!createTarget(t,QRhiTexture::RGBA32F,work))return fail("CPU: composition group target allocation");
             changed=QRect(QPoint(),doc);
         }
         if(doc!=documentSize){
             for(auto &t:linear)t={};
-            if(scratch.texture){scratch={};if(!createTarget(scratch,QRhiTexture::RGBA32F,doc))return fail("CPU: composition transform target allocation");}
-            if(!createTarget(linear[0],QRhiTexture::RGBA32F,doc) || !createTarget(linear[1],QRhiTexture::RGBA32F,doc))return fail("CPU: composition render-target allocation");
+            if(scratch.texture){scratch={};if(!createTarget(scratch,QRhiTexture::RGBA32F,work))return fail("CPU: composition transform target allocation");}
+            if(!createTarget(linear[0],QRhiTexture::RGBA32F,work) || !createTarget(linear[1],QRhiTexture::RGBA32F,work))return fail("CPU: composition render-target allocation");
             changed=QRect(QPoint(),doc);
         }
         display={};if(!createTarget(display,QRhiTexture::RGBA8,pixels))return fail("CPU: composition display-target allocation");
@@ -282,7 +355,7 @@ private:
     }
     void updateDirty(const CompositionPacketPtr &next){
         const QRect full(0,0,int(next->info.document_width),int(next->info.document_height));
-        if(!packet || next->info.key.document_generation!=packet->info.key.document_generation ||
+        if((paged(next) && packet && (next->region!=packet->region || next->pixels!=packet->pixels)) || !packet || next->info.key.document_generation!=packet->info.key.document_generation ||
            next->info.document_width!=packet->info.document_width || next->info.document_height!=packet->info.document_height ||
            next->nodes.size()!=packet->nodes.size() ||
            next->operations.size()!=packet->operations.size() || next->surfaceCount!=packet->surfaceCount || next->outputSurface!=packet->outputSurface ||
@@ -368,6 +441,7 @@ private:
         ++counters->pipelineCreates;pipelines[size_t(kind)]=std::move(value);return pipelines[size_t(kind)].get();
     }
     bool makePass(Pass &pass,Target &target,QRhiTexture *back,QRhiTexture *a,QRhiTexture *b,QRhiTexture *c,QRhiTexture *coverage=nullptr){
+        pass.parameters.page={pageOrigin.x(),pageOrigin.y(),workSize(packet).width(),workSize(packet).height()};
         pass.uniform.reset(rhi->newBuffer(QRhiBuffer::Dynamic,QRhiBuffer::UniformBuffer,sizeof(Parameters)));
         if(!pass.uniform->create())return false;
         ++counters->parameterBufferCreates;
@@ -400,7 +474,7 @@ private:
     }
     bool reusableTransformPasses()const{
         const auto &before=renderedPacket;
-        if(!before || !completePasses || passes.empty() || !packet->transform || !before->transform ||
+        if(paged(packet) || !before || !completePasses || passes.empty() || !packet->transform || !before->transform ||
            packet->info.key.document_generation!=before->info.key.document_generation ||
            packet->info.key.device_epoch!=before->info.key.device_epoch || packet->info.key.revision!=before->info.key.revision ||
            packet->info.document_width!=before->info.document_width || packet->info.document_height!=before->info.document_height ||
@@ -430,7 +504,7 @@ private:
                     minX=std::min(minX,vertexData[0]);minY=std::min(minY,vertexData[1]);maxX=std::max(maxX,vertexData[0]);maxY=std::max(maxY,vertexData[1]);}
                 const int w=std::max(0,std::min(documentSize.width(),int(std::ceil(maxX)))-std::max(0,int(std::floor(minX))));
                 const int h=std::max(0,std::min(documentSize.height(),int(std::ceil(maxY)))-std::max(0,int(std::floor(minY))));
-                work+=quint64(w)*h;if(work>33554432)return fail("CPU: composition transform triangle work budget");
+                work+=quint64(w)*h;if(!paged(packet) && work>33554432)return fail("CPU: composition transform triangle work budget");
             }
         }
         meshTriangleCount=count;batch->updateDynamicBuffer(meshVertices.get(),0,triangles.size(),triangles.constData());return true;
@@ -443,7 +517,7 @@ private:
     }
     bool reusableAdjustmentPasses()const{
         const auto &before=renderedPacket;
-        if(!before || !completePasses || passes.empty() || (!packet->adjustment && !before->adjustment) || packet->transform || before->transform ||
+        if(paged(packet) || !before || !completePasses || passes.empty() || (!packet->adjustment && !before->adjustment) || packet->transform || before->transform ||
            packet->info.key.device_epoch!=before->info.key.device_epoch || packet->info.key.document_generation!=before->info.key.document_generation ||
            packet->info.key.revision!=before->info.key.revision || packet->info.document_width!=before->info.document_width || packet->info.document_height!=before->info.document_height ||
            packet->region!=before->region || packet->pixels!=before->pixels || packet->lod!=before->lod ||
@@ -455,7 +529,7 @@ private:
     }
     bool reusablePaintingPasses()const{
         const auto &before=renderedPacket;
-        if(!before || !completePasses || passes.empty() || packet->transform || before->transform ||
+        if(paged(packet) || !before || !completePasses || passes.empty() || packet->transform || before->transform ||
            packet->adjustment || before->adjustment ||
            packet->info.key.device_epoch!=before->info.key.device_epoch || packet->info.key.document_generation!=before->info.key.document_generation ||
            packet->info.document_width!=before->info.document_width || packet->info.document_height!=before->info.document_height ||
@@ -494,6 +568,7 @@ private:
             ++counters->geometryReuses;return true;
         }
         const bool reusePainting=reusablePaintingPasses();
+        if(!pageSourcesReady || paged(packet)){
         if(!reusePainting){
             passes.clear();completePasses=!changed.isEmpty();
             // Node identity survives visibility/opacity changes.
@@ -502,9 +577,12 @@ private:
             if(sameNodes)for(int i=0;i<packet->nodes.size();++i)if(packet->nodes[i].layer_id!=renderedPacket->nodes[i].layer_id || packet->nodes[i].kind!=renderedPacket->nodes[i].kind){sameNodes=false;break;}
             if(!sameNodes)maps.clear();
         }
+        QVector<int> needed;
+        if(paged(packet))needed=pageTiles(packet,QRect(pageOrigin,workSize(packet)));
+        else{needed.reserve(packet->tiles.size());for(int i=0;i<packet->tiles.size();++i)needed.append(i);}
         QHash<quint64,int> locations;
         // Retain every source needed by this packet before choosing eviction slots.
-        for(const auto &tile:packet->tiles)if(cache.contains(tile.content_id))locations.insert(tile.content_id,cache.value(tile.content_id));
+        for(int i:needed){const auto &tile=packet->tiles[i];if(cache.contains(tile.content_id))locations.insert(tile.content_id,cache.value(tile.content_id));}
         ++useClock;
         QSet<int> occupied;for(auto slot:locations){occupied.insert(slot);slotUse[size_t(slot)]=useClock;}
         std::vector<int> candidates;candidates.reserve(size_t(atlasCapacity));
@@ -516,8 +594,8 @@ private:
         size_t candidate=0;quint64 bytes=0,uploads=0;
         const int frame=rhi->currentFrameSlot();
         if(frame<0 || frame>=staging.size())return fail("CPU: composition frame slot");
-        staging[frame].clear();
-        for(int i=0;i<packet->tiles.size();++i){
+        if(!pageSourcesReady)staging[frame].clear();
+        for(int i:needed){
             const auto id=packet->tiles[i].content_id;if(locations.contains(id))continue;
             if(candidate>=candidates.size())return fail("CPU: composition cache full");
             const int next=candidates[candidate++];slotUse[size_t(next)]=useClock;
@@ -533,14 +611,16 @@ private:
         counters->uploads.fetch_add(uploads);counters->uploadBytes.fetch_add(bytes);
         maps.resize(size_t(packet->nodes.size()));
         for(int i=0;i<packet->nodes.size();++i){
-            const QRect sourceRect=packet->transform && packet->transform->node==i?packet->transform->sourceBounds.toAlignedRect().adjusted(-2,-2,2,2):QRect();
+            const QRect sourceRect=paged(packet)?pageSourceRect(packet,i,QRect(pageOrigin,workSize(packet))):packet->transform && packet->transform->node==i?packet->transform->sourceBounds.toAlignedRect().adjusted(-2,-2,2,2):QRect();
             if(!map(maps[size_t(i)],packet->nodes[i],locations,sourceRect))return fail("CPU: composition page table allocation");
             batch->uploadTexture(maps[size_t(i)].texture.get(),QRhiTextureUploadDescription({QRhiTextureUploadEntry(0,0,QRhiTextureSubresourceUploadDescription(maps[size_t(i)].bytes))}));
         }
         if(maps.empty())return fail("CPU: composition empty plan");
+        }
         if(reusePainting)return true;
+        if(paged(packet))passes.clear();
         if(!prepareMesh(batch))return false;
-        if(!axisX || !axisY || !renderedPacket || renderedPacket->region!=packet->region || renderedPacket->pixels!=packet->pixels){
+        if(!pageSourcesReady && (!axisX || !axisY || !renderedPacket || renderedPacket->region!=packet->region || renderedPacket->pixels!=packet->pixels)){
             QByteArray xs,ys;axisX=axis(outputSize.width(),packet->region.x(),packet->region.width(),documentSize.width(),xs);
             axisY=axis(outputSize.height(),packet->region.y(),packet->region.height(),documentSize.height(),ys);
             if(!axisX || !axisY)return fail("CPU: composition axis allocation");
@@ -616,7 +696,8 @@ private:
         }
         auto pass=std::make_unique<Pass>();auto &p=pass->parameters;
         pass->output=2;
-        p.dimensions={documentSize.width(),documentSize.height(),outputSize.width(),outputSize.height()};p.factors={0,0,float(1<<packet->lod),1};
+        p.dimensions={documentSize.width(),documentSize.height(),outputSize.width(),outputSize.height()};p.factors={0,0,float(1<<packet->lod),1};p.source[0]=pageSourcesReady?0:1;
+        if(paged(packet))p.mask={changed.x(),changed.y(),changed.width(),changed.height()};
         if(!makePass(*pass,display,linear[current].texture.get(),axisX.get(),axisY.get(),maps[0].texture.get()))return fail("CPU: composition display pipeline allocation");
         batch->updateDynamicBuffer(pass->uniform.get(),0,sizeof(p),&p);passes.push_back(std::move(pass));return true;
     }
@@ -636,7 +717,39 @@ private:
         if(InteractionTrace::enabled.load())InteractionTrace::point("composition.previous_completed_gpu_ms",cb->lastCompletedGpuTime()*1000.);
         int finalLinear=packet->outputSurface;
         if(packet->operations.isEmpty())for(const auto &node:packet->nodes)if(node.kind==0 && node.visible)finalLinear=1-finalLinear;
+        struct LinearCapture{QByteArray bytes;std::mutex mutex;int remaining=0;};
+        std::shared_ptr<LinearCapture> capture;
+        if(readRequested && paged(packet)){
+            const quint64 bytes=quint64(documentSize.width())*documentSize.height()*16;
+            if(bytes>CompositionBudget::memoryBytes.load()/2 || bytes>INT_MAX){fail("CPU: diagnostic linear capture memory budget");return;}
+            capture=std::make_shared<LinearCapture>();capture->bytes.resize(qsizetype(bytes));
+            const auto work=workSize(packet);
+            capture->remaining=((documentSize.width()+work.width()-1)/work.width())*((documentSize.height()+work.height()-1)/work.height());
+            dirty=true;changed=QRect(QPoint(),documentSize);
+        }
         if(dirty){
+        pageSourcesReady=false;
+        const int frameSlot=rhi->currentFrameSlot();
+        if(frameSlot<0 || frameSlot>=8)return;
+        retiredPasses[size_t(frameSlot)].clear();retiredMaps[size_t(frameSlot)].clear();
+        quint64 composedArea=0,composedWork=0,displayArea=0;
+        const QRect damage=changed;
+        const auto work=workSize(packet);
+        const bool streaming=paged(packet);
+        for(int py=0;py<documentSize.height();py+=streaming?work.height():documentSize.height())
+        for(int px=0;px<documentSize.width();px+=streaming?work.width():documentSize.width()){
+        pageOrigin={px,py};
+        const QRect pageRect(pageOrigin,work);
+        if(streaming && !damage.intersects(pageRect))continue;
+        const int block=1<<packet->lod;
+        const auto visible=packet->region.toAlignedRect().adjusted(-block,-block,block,block).intersected(QRect(QPoint(),documentSize));
+        if(streaming && !capture && !visible.isEmpty() && !visible.intersects(pageRect))continue;
+        changed=damage;
+        if(streaming){
+            const int x0=(damage.left()/block)*block,y0=(damage.top()/block)*block;
+            const int x1=((damage.right()+block)/block)*block,y1=((damage.bottom()+block)/block)*block;
+            changed=QRect(x0,y0,x1-x0,y1-y0).intersected(pageRect).intersected(QRect(QPoint(),documentSize));
+        }
         auto *batch=rhi->nextResourceUpdateBatch();
         if(!prepare(batch,cb)){batch->release();return;}
         if(renderedPacket && packet->operations.isEmpty() && renderedPacket->operations.isEmpty() &&
@@ -646,18 +759,25 @@ private:
             for(const auto &node:renderedPacket->nodes)if(node.kind==0 && node.visible)previousLinear=1-previousLinear;
             // Visibility can change ping-pong parity. The other target contains
             // an intermediate stack, not the previous final image outside damage.
-            if(previousLinear!=finalLinear)batch->copyTexture(linear[finalLinear].texture.get(),linear[previousLinear].texture.get());
+            if(!streaming && previousLinear!=finalLinear)batch->copyTexture(linear[finalLinear].texture.get(),linear[previousLinear].texture.get());
         }
         cb->resourceUpdate(batch);
         for(size_t i=0;i<passes.size();++i){
-            const auto &pass=*passes[i];const bool last=pass.output==2;auto &target=last?display:(pass.output==3?scratch:surface(pass.output<2?pass.output:pass.output-2));const auto size=last?outputSize:documentSize;
+            const auto &pass=*passes[i];const bool last=pass.output==2;auto &target=last?display:(pass.output==3?scratch:surface(pass.output<2?pass.output:pass.output-2));const auto size=last?outputSize:work;
             // Native output has a one-to-one document mapping. Preserve its
             // unchanged pixels just like the linear targets, avoiding full-image
             // colour conversion for every small brush dab (also outside the view).
             const bool native=last && rendered && renderedPacket && outputSize==documentSize && packet->lod==0 &&
                 packet->region==QRectF(QPointF(),QSizeF(documentSize)) && renderedPacket->region==packet->region && renderedPacket->pixels==packet->pixels;
-            const auto scissor=last && !native?QRect(QPoint(),size):changed;
-            if(last){counters->lastDisplayArea=quint64(scissor.width())*scissor.height();counters->displayPixels.fetch_add(counters->lastDisplayArea.load());}
+            auto scissor=last && !native?QRect(QPoint(),size):(streaming?changed.translated(-pageOrigin):changed);
+            if(last && streaming && pageSourcesReady){
+                const auto r=packet->region;
+                const double sx=outputSize.width()/r.width(),sy=outputSize.height()/r.height();
+                const int x0=int(std::floor((changed.x()-r.x())*sx))-1,y0=int(std::floor((changed.y()-r.y())*sy))-1;
+                const int x1=int(std::ceil((changed.x()+changed.width()-r.x())*sx))+1,y1=int(std::ceil((changed.y()+changed.height()-r.y())*sy))+1;
+                scissor=QRect(x0,y0,x1-x0,y1-y0).intersected(QRect(QPoint(),outputSize));
+            }
+            if(last){const quint64 area=quint64(scissor.width())*scissor.height();displayArea+=area;counters->displayPixels.fetch_add(area);}
             if(scissor.isEmpty())continue;
             cb->beginPass(target.target.get(),Qt::transparent,{1,0});cb->setGraphicsPipeline(pass.pipeline);cb->setViewport({0,0,float(size.width()),float(size.height())});
             // QRhi scissor coordinates are bottom-left even on D3D11.
@@ -667,18 +787,36 @@ private:
             else cb->draw(3);
             cb->endPass();
         }
-        counters->passes.fetch_add(passes.size());++counters->adoptions;counters->revision=packet->info.key.revision;
-        if(!changed.isEmpty()){
-            const quint64 area=quint64(changed.width())*changed.height();counters->lastDirtyArea=area;
-            counters->composedPixels.fetch_add(area*(passes.size()-1));
+        if(capture){
+            const auto identity=CompositionReadback::identityOf(*packet);const auto version=*readRequest;
+            const auto origin=pageOrigin;const auto doc=documentSize;
+            auto result=std::make_shared<QRhiReadbackResult>();
+            result->completed=[result,capture,receiver,identity,version,origin,doc,work]{
+                std::lock_guard lock(capture->mutex);
+                const int width=std::min(work.width(),doc.width()-origin.x()),height=std::min(work.height(),doc.height()-origin.y());
+                if(result->data.size()>=work.width()*work.height()*16){
+                    for(int y=0;y<height;++y)std::memcpy(capture->bytes.data()+((origin.y()+y)*doc.width()+origin.x())*16,result->data.constData()+y*work.width()*16,size_t(width)*16);
+                    if(--capture->remaining==0)receiver->accept(version,identity,0,std::move(capture->bytes));
+                }
+                auto completed=std::move(result->completed);
+            };
+            auto *reads=rhi->nextResourceUpdateBatch();reads->readBackTexture(QRhiReadbackDescription(linear[finalLinear].texture.get()),result.get());cb->resourceUpdate(reads);
+            ++counters->testReadbacks;
         }
+        composedArea+=quint64(changed.width())*changed.height();composedWork+=quint64(changed.width())*changed.height()*(passes.size()-1);
+        counters->passes.fetch_add(passes.size());
+        if(streaming){pageSourcesReady=true;retiredPasses[size_t(frameSlot)].emplace_back(std::move(passes));retiredMaps[size_t(frameSlot)].emplace_back(std::move(maps));}
+        }
+        changed=damage;
+        ++counters->adoptions;counters->revision=packet->info.key.revision;
+        counters->lastDirtyArea=composedArea;counters->composedPixels.fetch_add(composedWork);counters->lastDisplayArea=displayArea;
         counters->lastSubmitNs=InteractionTrace::now();counters->lastSubmitGeometry=packet->geometrySequence;
         renderedPacket=packet;dirty=false;if(!rendered){rendered=true;fallback({},packet);}
         }
         if(readRequested){
             readVersion=*readRequest;const auto identity=CompositionReadback::identityOf(*packet);const auto version=readVersion;auto *reads=rhi->nextResourceUpdateBatch();
-            counters->testReadbacks.fetch_add(2);
-            for(int i=0;i<2;++i){
+            counters->testReadbacks.fetch_add(paged(packet)?1:2);
+            for(int i=paged(packet)?1:0;i<2;++i){
                 auto result=std::make_shared<QRhiReadbackResult>();
                 result->completed=[result,receiver,i,identity,version]{
                     receiver->accept(version,identity,i,result->data);
@@ -705,6 +843,10 @@ private:
     QShader vertex,fragment,meshVertex,preciseFragment,warpFragment;
     QSize documentSize,outputSize;
     QRect changed;
+    QPoint pageOrigin;
+    bool pageSourcesReady=false;
+    std::array<std::vector<std::vector<std::unique_ptr<Pass>>>,8> retiredPasses;
+    std::array<std::vector<std::vector<PageMap>>,8> retiredMaps;
     std::unique_ptr<QRhiSampler> sampler;
     std::unique_ptr<QRhiTexture> atlas,axisX,axisY,adjustmentLut;
     std::array<Target,2> linear;
@@ -720,6 +862,8 @@ private:
     std::array<std::unique_ptr<QRhiGraphicsPipeline>,4> pipelines;
     QHash<quint64,int> cache;
     int atlasCapacity=32;
+    mutable CompositionPacketPtr capacityPacket;
+    mutable int capacityValue=32,capacityTotal=0;
     std::vector<quint64> slotUse;quint64 useClock=0;
     std::vector<quint64> slotIds;
     QVector<QVector<std::shared_ptr<const CompositionTileData>>> staging;

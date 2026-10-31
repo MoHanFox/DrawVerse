@@ -134,18 +134,24 @@ impl Document {
             bounds[2] - ox,
             bounds[3] - oy,
         ];
-        let tile_count = ((x1 - 1).div_euclid(64) - x0.div_euclid(64) + 1) as usize
-            * ((y1 - 1).div_euclid(64) - y0.div_euclid(64) + 1) as usize;
-        if tile_count.saturating_mul(2) > self.options.max_document_tiles {
-            return Ok(None);
-        }
         let mut moving = original.clone();
         moving.tiles.clear();
         moving.white = (0, 0);
         let mut remaining = original.clone();
+        let mut produced_tiles = 0usize;
         for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
             for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
                 let key = TileCoord::from_signed(tx as i32, ty as i32);
+                // A large lasso over a sparse layer must not allocate cut-out
+                // tiles for transparent space. Explicit tiles and the implicit
+                // white rectangle remain authoritative, including edge tiles.
+                let intersects_white = tx * 64 < i64::from(original.white.0)
+                    && ty * 64 < i64::from(original.white.1)
+                    && tx * 64 + 64 > 0
+                    && ty * 64 + 64 > 0;
+                if !original.tiles.contains_key(&key) && !intersects_white {
+                    continue;
+                }
                 let input = original
                     .tiles
                     .get(&key)
@@ -181,6 +187,12 @@ impl Document {
                     }
                 }
                 drop(input);
+                // Budget actual split output, rather than the lasso's rectangle.
+                // Returning no preview retains the existing exact fallback.
+                produced_tiles += usize::from(nonempty) + usize::from(touched);
+                if produced_tiles > self.options.max_document_tiles {
+                    return Ok(None);
+                }
                 if nonempty {
                     let tile = Arc::new(Tile::from_pixels(selected)?);
                     self.pool.attach(&tile)?;
@@ -1082,6 +1094,7 @@ mod tests {
         d.begin_transform_layers_deferred(&[id]).unwrap();
         let initial = d.transform_geometry().unwrap();
         let source = d.transform_preview().unwrap().source;
+        d.options.max_document_tiles = d.tile_count().max(1);
         d.update_transform(TransformGeometry::rectangle(0., 0., 5000., 5000.))
             .unwrap();
         assert!(d.commit_transform().is_err());

@@ -1,8 +1,8 @@
 //! Read-only sparse presentation for a live move.
 use super::*;
 
-/// Native texels of a single ordinary raster, for immutable display
-/// assets. Return None when general composition or resampling is required.
+/// Native texels of ordinary Normal root rasters, for immutable display assets.
+/// Return None when general composition or resampling is required.
 /// Tile-local encoding avoids repeatedly composing offset guard pixels through
 /// the general renderer. Materialisation/export keep their existing paths.
 pub fn render_native_preview(
@@ -22,24 +22,28 @@ pub fn render_native_preview(
         || r.y < 0.
         || r.x + r.width > f64::from(snapshot.width)
         || r.y + r.height > f64::from(snapshot.height)
-        || snapshot.layers().len() != 1
     {
         return Ok(None);
+    }
+    if snapshot.layers().iter().any(|layer| {
+        let a = layer.appearance();
+        layer.is_group()
+            || layer.is_mask()
+            || layer.is_clipped()
+            || layer.is_image()
+            || layer.parent_id() != 0
+            || a.blend != BlendMode::Normal
+            || !layer.properties().visible
+            || layer.properties().opacity != 1.
+            || a.fill != 1.
+    }) {
+        return Ok(None);
+    }
+    if snapshot.layers().len() != 1 {
+        return native_stack(snapshot, request, cancel).map(Some);
     }
     let layer = &snapshot.layers()[0];
     let a = layer.appearance();
-    if layer.is_group()
-        || layer.is_mask()
-        || layer.is_clipped()
-        || layer.is_image()
-        || layer.parent_id() != 0
-        || a.blend != BlendMode::Normal
-        || !layer.properties().visible
-        || layer.properties().opacity != 1.
-        || a.fill != 1.
-    {
-        return Ok(None);
-    }
     let length = request.width as usize * request.height as usize * 4;
     let mut bytes = Vec::new();
     bytes
@@ -100,6 +104,92 @@ pub fn render_native_preview(
         lod: 0,
         pixels: FramePixels::Srgb(bytes),
     }))
+}
+
+// Ordinary sparse stationary stacks need no per-pixel traversal of an otherwise
+// implicit background. Fill the union of implicit white, then recompute only
+// pages touched by explicit tiles, in linear space through the core row sampler.
+fn native_stack(
+    snapshot: &DocumentSnapshot,
+    request: RenderRequest,
+    cancel: &CancellationToken,
+) -> Result<RenderFrame, RenderError> {
+    let r = request.region;
+    let (left, top) = (r.x as i64, r.y as i64);
+    let (right, bottom) = (
+        left + i64::from(request.width),
+        top + i64::from(request.height),
+    );
+    let length = request.width as usize * request.height as usize * 4;
+    let mut bytes = Vec::new();
+    bytes
+        .try_reserve_exact(length)
+        .map_err(|_| RenderError::ResourceLimit)?;
+    bytes.resize(length, 0u8);
+    let mut pages = BTreeSet::new();
+    for layer in snapshot.layers() {
+        checkpoint(cancel)?;
+        let a = layer.appearance();
+        let (ox, oy) = (i64::from(a.offset_x), i64::from(a.offset_y));
+        let (w, h) = layer.white_extent();
+        let (x0, x1) = (left.max(ox), right.min(ox + i64::from(w)));
+        if x0 < x1 {
+            for y in top.max(oy)..bottom.min(oy + i64::from(h)) {
+                checkpoint(cancel)?;
+                let start =
+                    ((y - top) as usize * request.width as usize + (x0 - left) as usize) * 4;
+                bytes[start..start + (x1 - x0) as usize * 4].fill(255);
+            }
+        }
+        for (key, _) in layer.tiles() {
+            checkpoint(cancel)?;
+            let (x, y) = (
+                i64::from(key.signed_x()) * 64 + ox,
+                i64::from(key.signed_y()) * 64 + oy,
+            );
+            let (x0, y0, x1, y1) = (
+                left.max(x),
+                top.max(y),
+                right.min(x + 64),
+                bottom.min(y + 64),
+            );
+            if x0 >= x1 || y0 >= y1 {
+                continue;
+            }
+            for ty in y0.div_euclid(64)..=(y1 - 1).div_euclid(64) {
+                for tx in x0.div_euclid(64)..=(x1 - 1).div_euclid(64) {
+                    pages.insert((tx, ty));
+                }
+            }
+        }
+    }
+    for (tx, ty) in pages {
+        checkpoint(cancel)?;
+        let (x0, x1) = (left.max(tx * 64), right.min((tx + 1) * 64));
+        for y in top.max(ty * 64)..bottom.min((ty + 1) * 64) {
+            let row = snapshot
+                .read_row(x0 as u32, y as u32, (x1 - x0) as u32)
+                .map_err(|e| RenderError::Storage(e.to_string()))?;
+            let start = ((y - top) as usize * request.width as usize + (x0 - left) as usize) * 4;
+            for (dest, pixel) in bytes[start..start + row.len() * 4]
+                .chunks_exact_mut(4)
+                .zip(row)
+            {
+                dest.copy_from_slice(&display(pixel.components()));
+            }
+        }
+        snapshot
+            .trim_storage()
+            .map_err(|e| RenderError::Storage(e.to_string()))?;
+    }
+    Ok(RenderFrame {
+        region: r,
+        width: request.width,
+        height: request.height,
+        revision: snapshot.revision,
+        lod: 0,
+        pixels: FramePixels::Srgb(bytes),
+    })
 }
 
 // The linear quantization error maps to less than half an 8-bit sRGB step.

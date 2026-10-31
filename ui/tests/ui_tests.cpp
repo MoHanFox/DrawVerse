@@ -1,6 +1,7 @@
 #include "platform/UiResources.h"
 #include "platform/MemoryBudget.h"
 #include "canvas/CanvasItem.h"
+#include "canvas/CanvasPresentationObservation.h"
 #include "color/ColorWheelItem.h"
 #include "canvas/SelectionOverlay.h"
 #include "workspace/WorkspaceManager.h"
@@ -106,6 +107,73 @@ class UiTests final : public QObject {
     Q_OBJECT
     QTemporaryDir m_preferences;
 private slots:
+
+    void largeCanvasTransformContinuous_data() {
+        QTest::addColumn<int>("fixture");QTest::addColumn<bool>("warp");
+        for(bool warp:{false,true})for(int fixture=0;fixture<6;++fixture)
+            QTest::newRow(qPrintable(QString("%1-%2").arg(warp?"warp":"affine").arg(fixture)))<<fixture<<warp;
+    }
+    void largeCanvasTransformContinuous() {
+        QFETCH(int,fixture);QFETCH(bool,warp);constexpr bool highest=false;const bool native=qEnvironmentVariableIntValue("DRAWVERSE_LARGE_TRANSFORM_NATIVE")!=0;QTemporaryDir temp;
+        PaintCoreClient client(nullptr,temp.filePath("large-drag.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
+        engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
+        engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
+        auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->showNormal();window->resize(1280,900);
+        auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
+        QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(8888,5000);QTRY_VERIFY(client.documentWidth()==8888 && !client.layerEditBusy());
+        QVERIFY(client.saveRenderSettings(512,512,highest));QTRY_COMPARE(client.highestCanvasQuality(),highest);
+        if(fixture==1 || fixture==2 || fixture==4){client.addLayer("small stroke");QTRY_VERIFY(!client.layerEditBusy() && client.layers().size()==2);client.setBrushRadius(20);client.setBrushColor(Qt::blue);
+            InputSample sample;sample.position={4200,2400};const auto depth=client.undoDepth();QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),depth+1);}
+        if(fixture>=2){client.setSelectionFeather(4);
+            const QList<QPointF> lasso=fixture<4?QList<QPointF>{QPointF(4100,2300),QPointF(4300,2310),QPointF(4290,2500),QPointF(4110,2490)}:
+                QList<QPointF>{QPointF(400,300),QPointF(8500,350),QPointF(8400,4700),QPointF(500,4650)};
+            QVERIFY(client.editSelectionPath(lasso,0,false));QTRY_VERIFY(client.selectionEnabled() && !client.layerEditBusy());}
+        auto *canvas=window->findChild<CanvasItem*>("mainCanvas");QVERIFY(canvas);QTRY_VERIFY(canvas->width()>300);canvas->actualSize();canvas->zoomBy(.1);QTRY_COMPARE(canvas->zoom(),qreal(.1));
+        if(!canvas->gpuDisplay())QSKIP("Continuous transform GPU diagnosis requires D3D11");
+        QTRY_VERIFY_WITH_TIMEOUT(client.compositionPacket() && canvas->compositionStatistics()["adoptions"].toULongLong()>0 && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision(),30000);
+        QTRY_VERIFY(canvas->compositionStatistics()["preciseTransform"].toInt()>0);
+        QElapsedTimer preparation;preparation.start();const auto depth=client.undoDepth();QVERIFY(client.beginTransform());QTRY_VERIFY_WITH_TIMEOUT(client.transformPoints().size()==16 && !client.transformBusy(),30000);
+        const auto initial=client.transformPoints();auto first=initial;for(auto &point:first)point=point.toPointF()+QPointF(4,8);QVERIFY(client.updateTransform(first,warp,2));
+        QTRY_VERIFY_WITH_TIMEOUT((client.residentPreview() || (client.compositionPacket() && client.compositionPacket()->transform) || client.frameRevision()>=client.revision()) && !client.transformBusy(),30000);
+        const auto preparationMs=preparation.elapsed();QTest::qWait(300);
+        auto observed=std::make_shared<CanvasPresentationObservation>();canvas->observePresentation(observed);
+        const auto source=client.residentPreview();const auto before=canvas->compositionStatistics();QElapsedTimer elapsed;elapsed.start();QVector<double> intervals,ages,calls;QVector<qint64> sent(1,0);QVector<quint64> keys(1,0);int index=0,frames=0,lastSeen=0;qint64 lastTick=0,lastFrame=0;QVector<double> frameIntervals;
+        const bool trace=qEnvironmentVariableIntValue("DRAWVERSE_LARGE_TRANSFORM_TRACE")!=0;InteractionTrace::start(trace);
+        QEventLoop loop;QTimer timer;timer.setInterval(8);timer.setTimerType(Qt::PreciseTimer);
+        const auto cage=client.transformPoints();const auto dragDocument=fixture==1?cage[0].toPointF():(cage[0].toPointF()+cage[15].toPointF())/2;
+        const auto press=canvas->mapToScene(canvas->documentRect().topLeft()+dragDocument*canvas->zoom()).toPoint();
+        if(native)QTest::mousePress(window,Qt::LeftButton,{},press,0);
+        // Match the entire adopted mesh, including interior Warp handles and
+        // corner scaling. A stationary first corner does not imply a stale frame.
+        const auto sentConnection=connect(&client,&PaintCoreClient::transformChanged,&loop,[&]{
+            if(!index || index>=keys.size())return;
+            if(const auto frame=client.residentPreview();frame && !frame->vertices.isEmpty())
+                keys[index]=quint64(qHashBits(frame->vertices.constData(),size_t(frame->vertices.size())*sizeof(frame->vertices[0])));
+        });
+        connect(&timer,&QTimer::timeout,&loop,[&]{const auto t=elapsed.nsecsElapsed();if(lastTick)intervals.append(double(t-lastTick)/1e6);lastTick=t;
+            auto points=initial;++index;sent.append(t);keys.append(0);for(auto &point:points)point=point.toPointF()+QPointF(4*index,8);
+            if(warp)points[5]=points[5].toPointF()+QPointF(0,24*std::sin(index*.03));
+            const auto start=elapsed.nsecsElapsed();if(native)QTest::mouseMove(window,press+QPoint(index,0),0);else QVERIFY(client.updateTransform(points,warp,2));calls.append(double(elapsed.nsecsElapsed()-start)/1e6);});
+        const auto connection=connect(window,&QQuickWindow::frameSwapped,&loop,[&]{const auto t=elapsed.nsecsElapsed();if(lastFrame)frameIntervals.append(double(t-lastFrame)/1e6);lastFrame=t;++frames;
+            const auto node=observed->snapshot();int shown=0;
+            for(int i=keys.size()-1;i>lastSeen;--i)if(keys[i] && keys[i]==node.identity.geometryKey){shown=i;break;}
+            if(shown>lastSeen){ages.append(double(t-sent[shown])/1e6);lastSeen=shown;}});
+        timer.start();QTimer::singleShot(1800,&loop,&QEventLoop::quit);loop.exec();timer.stop();disconnect(connection);disconnect(sentConnection);if(native)QTest::mouseRelease(window,Qt::LeftButton,{},press+QPoint(index,0),0);
+        const auto events=InteractionTrace::finish();const auto percentile=[](QVector<double> v,double p){if(v.isEmpty())return -1.;std::sort(v.begin(),v.end());return v[qMin(v.size()-1,qsizetype(std::ceil(v.size()*p))-1)];};
+        const auto resident=client.residentPreview();QJsonObject report{{"fixture",fixture},{"highest",highest},{"warp",warp},{"native",native},{"preparation_ms",preparationMs},{"inputs",index},{"frames",frames},{"node_updates",ages.size()},
+            {"input_p95_ms",percentile(intervals,.95)},{"input_max_ms",percentile(intervals,1.)},{"call_p95_ms",percentile(calls,.95)},
+            {"node_age_p95_ms",percentile(ages,.95)},{"frame_p95_ms",percentile(frameIntervals,.95)},
+            {"mesh",resident && resident->meshPreview},{"resident",bool(resident)},{"exact",bool(client.compositionPacket() && client.compositionPacket()->transform)},
+            {"before",QJsonObject::fromVariantMap(before)},{"after",QJsonObject::fromVariantMap(canvas->compositionStatistics())},{"trace",events}};
+        QDir().mkpath("build");QFile file(QString("build/large-drag-%1-%2.json").arg(qEnvironmentVariable("DRAWVERSE_LARGE_TRANSFORM_RUN","baseline"),QTest::currentDataTag()));QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(report).toJson());file.close();
+        qInfo()<<"large canvas continuous"<<QTest::currentDataTag()<<"inputs/frames/nodes"<<index<<frames<<ages.size()<<"tick/call/node/frame P95"<<percentile(intervals,.95)<<percentile(calls,.95)<<percentile(ages,.95)<<percentile(frameIntervals,.95)<<"mesh/resident"<<bool(resident && resident->meshPreview)<<bool(resident);
+        QVERIFY(index>10);
+        if(!highest){QVERIFY2(resident && resident->meshPreview,"Ordinary large-canvas transforms must use cached geometry, including sparse layers and selections");
+            QVERIFY(source);QCOMPARE(resident->sourceId,source->sourceId);for(int i=0;i<3;++i)QCOMPARE(resident->images[i].cacheKey(),source->images[i].cacheKey());
+            QVERIFY(lastSeen>0);QVERIFY(source->uploads->load()<=1);QCOMPARE(canvas->compositionStatistics()["composedPixels"],before["composedPixels"]);}
+        QVERIFY(client.finishTransform(false));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);QCOMPARE(client.undoDepth(),depth);QVERIFY(client.lastError().isEmpty());
+        canvas->observePresentation({});QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
 
     void canvasNavigationAnimatesAnchorsAndInertiaWithoutHistory() {
         QTemporaryDir temp;PaintCoreClient client(nullptr,temp.filePath("navigation.ini"));QTRY_VERIFY(client.ready());

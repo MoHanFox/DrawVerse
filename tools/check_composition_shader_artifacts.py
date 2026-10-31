@@ -27,7 +27,7 @@ def main():
             reflection, _ = json.JSONDecoder().raw_decode(dump.split('Reflection info: ', 1)[1])
             block = reflection['uniformBlocks'][0]
             fields = {m['name']: (m['offset'], m['type']) for m in block['members']}
-            if block['size'] != 224 or any(fields.get('inverse'+str(i)) != (128+i*32, 'dvec4') for i in range(3)):
+            if block['size'] != 272 or fields.get('page') != (256, 'ivec4') or any(fields.get('inverse'+str(i)) != (128+i*32, 'dvec4') for i in range(3)):
                 raise ValueError(f'{name}: unexpected double uniform layout {block}')
         else:
             targets = verify_dump(dump, a.precompiled)
