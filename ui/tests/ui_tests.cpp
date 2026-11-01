@@ -135,6 +135,7 @@ private slots:
         QElapsedTimer preparation;preparation.start();const auto depth=client.undoDepth();QVERIFY(client.beginTransform());QTRY_VERIFY_WITH_TIMEOUT(client.transformPoints().size()==16 && !client.transformBusy(),30000);
         const auto initial=client.transformPoints();auto first=initial;for(auto &point:first)point=point.toPointF()+QPointF(4,8);QVERIFY(client.updateTransform(first,warp,2));
         QTRY_VERIFY_WITH_TIMEOUT((client.residentPreview() || (client.compositionPacket() && client.compositionPacket()->transform) || client.frameRevision()>=client.revision()) && !client.transformBusy(),30000);
+        QTRY_VERIFY_WITH_TIMEOUT(client.transformControlsVisible(),30000);
         const auto preparationMs=preparation.elapsed();QTest::qWait(300);
         auto observed=std::make_shared<CanvasPresentationObservation>();canvas->observePresentation(observed);
         const auto source=client.residentPreview();const auto before=canvas->compositionStatistics();QElapsedTimer elapsed;elapsed.start();QVector<double> intervals,ages,calls;QVector<qint64> sent(1,0);QVector<quint64> keys(1,0);int index=0,frames=0,lastSeen=0;qint64 lastTick=0,lastFrame=0;QVector<double> frameIntervals;
@@ -162,7 +163,10 @@ private slots:
             if(shown>lastSeen){ages.append(double(t-sent[shown])/1e6);lastSeen=shown;}});
         timer.start();QTimer::singleShot(1800,&loop,&QEventLoop::quit);loop.exec();timer.stop();const auto coreAfterDrag=client.revision();disconnect(connection);disconnect(sentConnection);if(native)QTest::mouseRelease(window,Qt::LeftButton,{},press+QPoint(index,0),0);
         const auto events=InteractionTrace::finish();const auto percentile=[](QVector<double> v,double p){if(v.isEmpty())return -1.;std::sort(v.begin(),v.end());return v[qMin(v.size()-1,qsizetype(std::ceil(v.size()*p))-1)];};
-        const auto resident=client.residentPreview();QJsonObject report{{"fixture",fixture},{"highest",highest},{"warp",warp},{"native",native},{"core_revision_before",double(coreRevision)},{"core_revision_after_drag",double(coreAfterDrag)},{"preparation_ms",preparationMs},{"inputs",index},{"frames",frames},{"node_updates",ages.size()},
+        const auto resident=client.residentPreview();int textureEdge=0;quint64 textureBytes=0;
+        const auto measure=[&](const ResidentPreviewAssets &assets){for(const auto &image:assets.images){textureEdge=std::max({textureEdge,image.width(),image.height()});textureBytes+=quint64(image.sizeInBytes());}};
+        if(resident){measure(*resident);if(resident->prepared)measure(*resident->prepared);}
+        QJsonObject report{{"fixture",fixture},{"source_mip",resident?int(resident->sourceMip->load()):-1},{"uploaded_texture_bytes",resident?double(resident->uploadedTextureBytes->load()):0},{"texture_edge",textureEdge},{"texture_bytes",double(textureBytes)},{"selection_retained",client.selectionEnabled()},{"highest",highest},{"warp",warp},{"native",native},{"core_revision_before",double(coreRevision)},{"core_revision_after_drag",double(coreAfterDrag)},{"preparation_ms",preparationMs},{"inputs",index},{"frames",frames},{"node_updates",ages.size()},
             {"input_p95_ms",percentile(intervals,.95)},{"input_max_ms",percentile(intervals,1.)},{"call_p95_ms",percentile(calls,.95)},
             {"node_age_p95_ms",percentile(ages,.95)},{"frame_p95_ms",percentile(frameIntervals,.95)},
             {"mesh",resident && resident->meshPreview},{"resident",bool(resident)},{"exact",bool(client.compositionPacket() && client.compositionPacket()->transform)},
@@ -170,7 +174,7 @@ private slots:
         QDir().mkpath("build");QFile file(QString("build/large-drag-%1-%2.json").arg(qEnvironmentVariable("DRAWVERSE_LARGE_TRANSFORM_RUN","baseline"),QTest::currentDataTag()));QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(report).toJson());file.close();
         qInfo()<<"large canvas continuous"<<QTest::currentDataTag()<<"inputs/frames/nodes"<<index<<frames<<ages.size()<<"tick/call/node/frame P95"<<percentile(intervals,.95)<<percentile(calls,.95)<<percentile(ages,.95)<<percentile(frameIntervals,.95)<<"mesh/resident"<<bool(resident && resident->meshPreview)<<bool(resident);
         QVERIFY(index>10);
-        if(!highest){QCOMPARE(coreAfterDrag,coreRevision);QVERIFY2(resident && resident->meshPreview,"Ordinary large-canvas transforms must use cached geometry, including sparse layers and selections");
+        if(!highest){QCOMPARE(client.selectionEnabled(),fixture>=2);QCOMPARE(coreAfterDrag,coreRevision);QVERIFY2(resident && resident->meshPreview,"Ordinary large-canvas transforms must use cached geometry, including sparse layers and selections");
             QVERIFY(source);QCOMPARE(resident->sourceId,source->sourceId);for(int i=0;i<3;++i)QCOMPARE(resident->images[i].cacheKey(),source->images[i].cacheKey());
             QVERIFY(lastSeen>0);QVERIFY(source->uploads->load()<=1);QCOMPARE(canvas->compositionStatistics()["composedPixels"],before["composedPixels"]);}
         QVERIFY(client.finishTransform(false));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);QCOMPARE(client.undoDepth(),depth);QVERIFY(client.lastError().isEmpty());

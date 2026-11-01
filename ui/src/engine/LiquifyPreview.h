@@ -12,6 +12,7 @@
 struct ResidentPreviewAssets {
     quint64 sourceId=0;
     bool meshPreview=false;
+    // Negotiated source packet; its actual extent remains budget constrained.
     bool fullResolution=false;
     bool transformIdentity=false;
     QImage selection;
@@ -19,6 +20,8 @@ struct ResidentPreviewAssets {
     std::array<QImage,3> images;
     // Count render-thread upload batches, without exposing graphics objects to the GUI.
     std::shared_ptr<std::atomic_uint64_t> uploads=std::make_shared<std::atomic_uint64_t>(0);
+    std::shared_ptr<std::atomic_uint64_t> uploadedTextureBytes=std::make_shared<std::atomic_uint64_t>(0);
+    std::shared_ptr<std::atomic_uint32_t> sourceMip=std::make_shared<std::atomic_uint32_t>(0);
 };
 struct ResidentPreviewFrame : ResidentPreviewAssets {
     quint64 generation=0,revision=0;

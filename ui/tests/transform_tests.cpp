@@ -640,6 +640,14 @@ Window {
         connect(&client,&PaintCoreClient::computationProgressChanged,this,[&]{sawVisible|=client.longTaskVisible();const auto progress=client.computationProgress();sawActualCount|=progress.value("state").toInt()==1 && progress.value("completed").toULongLong()>0 && progress.value("completed").toULongLong()<progress.value("total").toULongLong();});
         const auto depth=client.undoDepth();QVERIFY(client.flipImage(true));QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),depth+1,30000);QTRY_COMPARE(client.computationProgress().value("state").toInt(),2);QVERIFY(!sawVisible);QVERIFY(!overlay->isVisible());
         client.setLongTaskDelay(0);sawVisible=false;sawActualCount=false;heartbeat.start();QVERIFY(client.flipImage(true));QTRY_COMPARE_WITH_TIMEOUT(client.undoDepth(),depth+2,30000);heartbeat.stop();QTRY_COMPARE(client.computationProgress().value("state").toInt(),2);QCOMPARE(client.computationProgress().value("kind").toInt(),3);QVERIFY(sawVisible);QVERIFY(sawActualCount);QVERIFY(heartbeats>1);QVERIFY(!client.longTaskVisible());QVERIFY(!overlay->isVisible());
+        // Exercise the cached free-transform confirmation too, not only flips.
+        QVERIFY(client.beginTransform());QTRY_VERIFY_WITH_TIMEOUT(client.transformActive() && !client.transformBusy() && client.transformPoints().size()==16,30000);
+        auto points=client.transformPoints();for(auto &point:points)point=point.toPointF()+QPointF(32,16);
+        QVERIFY(client.updateTransform(points,false,3));QVERIFY(client.checkpointTransform());QTRY_VERIFY(!client.transformBusy());
+        sawVisible=false;sawActualCount=false;heartbeats=0;heartbeat.start();QVERIFY(client.finishTransform(true));
+        QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);heartbeat.stop();
+        QTRY_COMPARE(client.computationProgress().value("state").toInt(),2);QCOMPARE(client.computationProgress().value("kind").toInt(),1);
+        QVERIFY(sawVisible);QVERIFY(sawActualCount);QVERIFY(heartbeats>1);QVERIFY(!client.longTaskVisible());QVERIFY(!overlay->isVisible());
         QVERIFY(!window->findChild<QObject*>("liquifyCommitProgress"));QVERIFY(client.lastError().isEmpty());QCOMPARE(warnings,QStringList());
         auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);QSignalSpy stopped(documents,&DocumentManager::stopped);documents->shutdown();QTRY_COMPARE(stopped.size(),1);
     }

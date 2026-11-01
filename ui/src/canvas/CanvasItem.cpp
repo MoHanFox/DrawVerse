@@ -228,7 +228,7 @@ void CanvasItem::endPicking(bool cancel) {
     updateSamplingDemand();
 }
 void CanvasItem::updateSamplingDemand(){
-    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(isVisible() && (m_pendingSample || m_picking || m_altHeld || m_client->eyedropperTool()));
+    if(m_client && m_interactive && !m_previewPart)m_client->setCpuSamplingRequired(isVisible() && (m_pendingSample || m_picking || (m_altHeld && !m_client->transformActive()) || m_client->eyedropperTool()));
 }
 void CanvasItem::refreshPendingSample(){
     if(!m_pendingSample || !m_client)return;
@@ -411,10 +411,12 @@ void CanvasItem::refresh() {
     if (!m_client) return;
     refreshPendingSample();
     if(m_previewPart){
-        m_residentPreview=m_client->residentPreview();
-        m_residentEditing=m_client->transformActive() || m_client->liquifyActive() || m_client->layerMoveActive();
-        const auto image=m_residentPreview?m_residentPreview->images[size_t(m_previewPart)]:QImage();
-        m_image=image;update();
+        const auto next=m_client->residentPreview();
+        const auto image=next?next->images[size_t(m_previewPart)]:QImage();
+        const bool changed=m_image.cacheKey()!=image.cacheKey() || bool(m_residentPreview)!=bool(next) ||
+            (m_residentPreview && next && m_residentPreview->sourceId!=next->sourceId);
+        m_residentPreview=next;m_residentEditing=m_client->transformActive() || m_client->liquifyActive() || m_client->layerMoveActive();
+        m_image=image;if(changed)update();
         return;
     }
     if(m_interactive && window()){m_client->setTransformPreviewDevice(m_compositionCounters);m_client->setResidentGpuPreviewAvailable(gpuDisplay());m_client->setCompositionPrecisionAvailable(m_compositionCounters->preciseTransform.load()>0);
@@ -656,20 +658,18 @@ QSGNode *CanvasItem::updatePaintNode(QSGNode *old, UpdatePaintNodeData *) {
     }else if(node->composition){delete node->composition;node->composition=nullptr;node->compositionEpoch=0;}
     if(m_previewPart){
         if(!m_residentPreview){delete node;return nullptr;}
-        const auto previous=node->sources;
-        if(!node->sources[0] || node->sources[0]->sourceId!=m_residentPreview->sourceId){
-            auto current=ResidentPreviewTextures::acquire(window(),*m_residentPreview);
-            auto prepared=m_residentPreview->prepared?ResidentPreviewTextures::acquire(window(),*m_residentPreview->prepared):nullptr;
-            if(!current || (m_residentPreview->prepared && !prepared)){delete node;return nullptr;}
-            if(node->image && node->image->ownsTexture()){delete node->image;node->image=nullptr;}
-            node->sources={std::move(current),std::move(prepared)};
-        }
+        const qreal density=m_presentationRect.width()/std::max(1,m_residentPreview->documentSize.width())*window()->effectiveDevicePixelRatio();
+        auto current=ResidentPreviewTextures::acquire(window(),*m_residentPreview,m_residentPreview.get(),density);
+        auto prepared=m_residentPreview->prepared?ResidentPreviewTextures::acquire(window(),*m_residentPreview->prepared,m_residentPreview.get(),density):nullptr;
+        if(!current || (m_residentPreview->prepared && !prepared)){delete node;return nullptr;}
+        if(node->image && node->image->ownsTexture()){delete node->image;node->image=nullptr;}
+        node->sources={std::move(current),std::move(prepared)};
         if(!node->image){node->image=new QSGSimpleTextureNode;node->appendChildNode(node->image);}
         node->image->setTexture(node->sources[0]->images[size_t(m_previewPart)]);node->image->setFiltering(QSGTexture::Linear);
         // The background providers share resident textures with the mesh shader.
-        // Keep their sampler state aligned so a source switch cannot disable
-        // mipmaps after Qt has released the host image.
-        const auto mipmap=m_residentPreview->meshPreview?QSGTexture::Linear:QSGTexture::None;
+        // Each selected mip is its own cached texture; providers and mesh use
+        // that same level without generating another GPU mip pyramid.
+        const auto mipmap=QSGTexture::None;
         static_cast<QSGOpaqueTextureMaterial*>(node->image->material())->setMipmapFiltering(mipmap);
         if(auto *opaque=node->image->opaqueMaterial())static_cast<QSGOpaqueTextureMaterial*>(opaque)->setMipmapFiltering(mipmap);
         node->image->markDirty(QSGNode::DirtyMaterial);

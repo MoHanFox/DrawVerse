@@ -66,6 +66,7 @@ struct BackendConnection {
     CompositionViewRequest compositionView;
     std::atomic_bool residentPreviewPending{false};
     std::atomic_bool transformMeshAssets{false};
+    std::atomic_bool highestPreviewQuality{false};
     std::atomic_bool transformSourcePairSupported{false};
     std::atomic<quint32> transformMaxEdge{0};
     std::atomic<quint64> transformMaxBytes{0};
@@ -322,16 +323,7 @@ public:
         }
         emit brushFileReady(status==PAINT_OK?package:QByteArray{},status==PAINT_OK?QString{}:immediateError(status),exporting,abr);
     }
-    void pollTaskProgress() {
-        auto progress=dto<PaintTaskProgress>();
-        if(paint_session_task_progress(m_core,m_session,&progress)!=PAINT_OK)return;
-        QVariantMap values{{"state",progress.state},{"kind",progress.kind},{"phase",progress.phase},{"status",progress.status},
-            {"sequence",qulonglong(progress.sequence)},{"generation",qulonglong(progress.document_generation)},
-            {"stage",qulonglong(progress.stage)},{"completed",qulonglong(progress.completed)},{"total",qulonglong(progress.total)},{"elapsedMs",qulonglong(progress.elapsed_ms)}};
-        if(values!=m_lastTaskProgress){m_lastTaskProgress=values;emit taskProgress(values);}
-    }
 signals:
-    void taskProgress(QVariantMap values);
     void residentPreviewReady(ResidentPreviewPtr preview);
     void movePreparationReady(quint64 generation,quint64 revision,quint64 layer,quint64 request,ResidentPreviewAssetsPtr assets);
     void wetActionReady(bool success,QString error);
@@ -541,7 +533,6 @@ public:
     }
     void poll() {
         if (!m_session || m_stopped) return;
-        pollTaskProgress();
         pollCompute();
         pollBrushState();
         pollWetAction();
@@ -706,9 +697,14 @@ public:
         auto next=std::make_shared<ResidentPreviewFrame>();
         next->generation=info.document_generation;next->revision=info.revision;next->sourceId=info.source_id;
         next->columns=info.columns;next->rows=info.rows;next->documentSize=QSize(int(info.document_width),int(info.document_height));next->focus=(info.focus&1)!=0;next->forward=(info.focus&2)!=0;
-        const bool fullResolution=m_fullResolutionResidentSupported && m_connection->transformMeshAssets.load()
-            && next->forward && !(info.focus&PAINT_RESIDENT_PREVIEW_SELECTED);
-        const auto edge=m_connection->transformMaxEdge.load();
+        // Transform retains native source texels within the negotiated budget.
+        // Liquify independently uses a bounded ordinary-quality proxy.
+        const auto hardwareEdge=m_connection->transformMaxEdge.load();
+        const auto edge=next->forward || m_connection->highestPreviewQuality.load()?hardwareEdge:std::min(hardwareEdge,4096u);
+        auto currentInfo=dto<PaintSessionInfo>();
+        if(paint_session_info(m_core,m_session,&currentInfo)!=PAINT_OK)return;
+        const bool fullResolution=m_fullResolutionResidentSupported && edge &&
+            (next->forward || (currentInfo.flags&PAINT_SESSION_LIQUIFY));
         quint64 alternateId=0,identityId=0;
         if(next->forward && m_connection->transformSourcePairSupported.load()){
             std::array<uint8_t,16> sources{};uint64_t required=0;
@@ -1028,7 +1024,6 @@ public:
     QElapsedTimer m_computeClock;
     quint64 m_computeSequence=0;
     std::shared_ptr<BackendConnection> m_connection;
-    QVariantMap m_lastTaskProgress;
     QTimer *m_timer;
     PaintCore *m_core = nullptr;
     PaintSession *m_session = nullptr;
@@ -1057,7 +1052,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         CompositionBudget::memoryBytes=quint64(values["memoryMiB"].toInt())*1024*1024;
         auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);
         CompositionBudget::cacheBytes=quint64(std::clamp(settings->value("storage/memoryMiB",defaultMemoryMiB()).toInt(),64,1048576))*1024*1024;
-        m_highestCanvasQuality=values["highestQuality"].toBool();
+        m_highestCanvasQuality=values["highestQuality"].toBool();m_connection->highestPreviewQuality.store(m_highestCanvasQuality);
         const auto gpu=values["gpuMiB"].toInt();
         CompositionBudget::automaticGpu=gpu==0;
         CompositionBudget::gpuBytes=gpu?quint64(gpu)*1024*1024:CompositionBudget::memoryBytes.load();
@@ -1186,7 +1181,30 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         if(changed)emit brushOutlineChanged();requestBrushOutlines();
     });
     connect(m_brushLibrary,&BrushLibrary::recentColorsChanged,this,&PaintCoreClient::recentColorsChanged);
-    connect(m_worker,&BackendWorker::taskProgress,this,[this](const QVariantMap &values){if(m_closing || m_computationProgress==values)return;m_computationProgress=values;emit computationProgressChanged();});
+    // Read only atomic task counters on the GUI clock. Source preparation and
+    // frame transfer can occupy the backend worker for seconds on large canvases.
+    auto *progressTimer=new QTimer(this);progressTimer->setInterval(50);
+    connect(progressTimer,&QTimer::timeout,this,[this,handoffClock=QElapsedTimer{},handoffSequence=quint64(0),controlsVisible=false]() mutable {
+        if(m_closing)return;
+        const bool visible=transformControlsVisible();
+        if(visible!=controlsVisible){controlsVisible=visible;emit transformChanged();}
+        auto progress=dto<PaintTaskProgress>();
+        {QMutexLocker lock(&m_connection->mutex);if(!m_connection->session || paint_session_task_progress(m_connection->core,m_connection->session,&progress)!=PAINT_OK)return;}
+        QVariantMap values{{"state",progress.state},{"kind",progress.kind},{"phase",progress.phase},{"status",progress.status},
+            {"sequence",qulonglong(progress.sequence)},{"generation",qulonglong(progress.document_generation)},
+            {"stage",qulonglong(progress.stage)},{"completed",qulonglong(progress.completed)},{"total",qulonglong(progress.total)},{"elapsedMs",qulonglong(progress.elapsed_ms)}};
+        // The actor can finish before the final full-resolution frame is ready.
+        // Keep an indeterminate finishing phase until that frame replaces the cache.
+        const bool preparing=m_transformActive && m_transformMeshPreview && !m_transformClosing && !visible;
+        if(progress.state==PAINT_TASK_SUCCEEDED && progress.kind==PAINT_TASK_TRANSFORM &&
+           progress.document_generation==m_generation && (preparing || (progress.sequence==m_lastTransform &&
+           (m_transformClosing || (!m_transformActive && m_residentPreview && m_transformMeshPreview))))){
+            if(handoffSequence!=progress.sequence){handoffSequence=progress.sequence;handoffClock.start();}
+            values["state"]=PAINT_TASK_RUNNING;values["phase"]=preparing?0:3;values["completed"]=0;values["total"]=0;
+            values["elapsedMs"]=qulonglong(progress.elapsed_ms+quint64(handoffClock.elapsed()));
+        }else{handoffSequence=0;handoffClock.invalidate();}
+        if(m_computationProgress!=values){m_computationProgress=values;emit computationProgressChanged();}
+    });progressTimer->start();
     connect(m_worker,&BackendWorker::storageState,this,[this](QVariantMap saved,QVariantMap active,QVariantMap info,QString message) {
         m_storageSettings=std::move(saved); m_activeStorageSettings=std::move(active);
         m_storageInfo=std::move(info); m_storageMessage=std::move(message); emit storageChanged();
@@ -1197,7 +1215,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_worker,&BackendWorker::computeState,this,[this](QVariantList hardware,QString device,QString status,bool busy,bool highestQuality) {
         const bool qualityChanged=m_highestCanvasQuality!=highestQuality;
         if(m_computeHardware==hardware && m_computeDevice==device && m_computeStatus==status && m_computeBusy==busy && !qualityChanged)return;
-        m_highestCanvasQuality=highestQuality;
+        m_highestCanvasQuality=highestQuality;m_connection->highestPreviewQuality.store(highestQuality);
         const bool deviceChanged=m_computeDevice!=device;
         m_computeHardware=std::move(hardware);m_computeDevice=std::move(device);m_computeStatus=std::move(status);m_computeBusy=busy;
         if(qualityChanged)emit stateChanged();
@@ -1242,6 +1260,14 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             emit transformChanged();
         }
         m_transformPublished=publishedTransform;
+        if(publishedTransform && m_transformMeshPreview && info.completed_sequence>=m_pendingTransform && !m_residentPreview){
+            auto resident=dto<PaintResidentPreviewInfo>();QMutexLocker lock(&m_connection->mutex);
+            if(m_connection->session && paint_session_resident_preview_info(m_connection->core,m_connection->session,&resident)==PAINT_NOT_FOUND){
+                // The core can decline a split (opacity/masks/complex stacks).
+                // Keep the exact fallback usable instead of waiting for absent textures.
+                m_transformMeshPreview=false;m_connection->transformMeshAssets.store(false);
+            }
+        }
         if(m_transformClosing && info.completed_sequence>=m_pendingTransform){m_transformClosing=false;}
         if(!publishedTransform && info.completed_sequence>=m_pendingTransform)m_compositionTransformCpu=false;
         if(!publishedTransform && m_transformActive && info.completed_sequence>=m_pendingTransform && m_afterTransform){auto action=std::move(m_afterTransform);QTimer::singleShot(0,this,std::move(action));}
@@ -1722,10 +1748,11 @@ bool PaintCoreClient::prepareCompositionTransform(){
 }
 void PaintCoreClient::setTransformPreviewLimits(int edge,quint64 availableGpuBytes){
     if(m_transformActive || m_transformMeshPreview)return;
-    // Keep space for mip levels and concurrent display resources, and for the
+    // Reserve up to 2x for cached mip levels (including one-pixel strips),
+    // concurrent display resources, and for the
     // Rust packet, worker transfer, Qt host copy and bounded renderer scratch.
     m_connection->transformMaxEdge.store(quint32(std::max(0,edge)));
-    m_connection->transformMaxBytes.store(std::min(CompositionBudget::memoryBytes.load()/4,availableGpuBytes/2*3/4));
+    m_connection->transformMaxBytes.store(std::min(CompositionBudget::memoryBytes.load()/4,availableGpuBytes/4));
 }
 bool PaintCoreClient::preferTransformMeshPreview() const {
     // The three-image split is valid only for a single Normal root and a
@@ -1758,9 +1785,6 @@ bool PaintCoreClient::preferTransformMeshPreview() const {
         if(node.kind==PAINT_COMPOSITION_MASK)continue;
         if(node.layer_id==targets.front()){
             if(node.mask_index<quint32(m_compositionPacket->nodes.size()) || quint32(node.reserved)!=0)return false;
-            // Exact composition currently damages the entire document for each
-            // geometry change. A sparse target on a large canvas needs the same
-            // cached mesh path as a large layer; target area alone is misleading.
             const quint64 area=std::max<quint64>(quint64(node.white_width)*node.white_height,quint64(node.tile_count)*4096);
             if(area<=1024ull*1024 && quint64(m_width)*m_height<=1024ull*1024 && !selectionEnabled())return false;
             found=true;
@@ -2993,7 +3017,7 @@ bool PaintCoreClient::saveRenderSettings(int memoryMiB,int gpuMiB,bool highestQu
     auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);
     settings->setValue("performance/memoryMiB",memoryMiB);settings->setValue("performance/gpuMiB",gpuMiB);settings->setValue("performance/highestQuality",highestQuality);settings->sync();
     if(settings->status()!=QSettings::NoError)return false;
-    if(m_highestCanvasQuality!=highestQuality){m_highestCanvasQuality=highestQuality;emit stateChanged();}
+    if(m_highestCanvasQuality!=highestQuality){m_highestCanvasQuality=highestQuality;m_connection->highestPreviewQuality.store(highestQuality);emit stateChanged();}
     emit storageChanged();return true;
 }
 bool PaintCoreClient::saveStorageSettings(const QString &directory,int memoryMiB,int scratchGiB,int reserveMiB) {

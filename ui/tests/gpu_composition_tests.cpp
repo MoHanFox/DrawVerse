@@ -2,6 +2,7 @@
 #include "canvas/CanvasItem.h"
 #include "canvas/CanvasPresentationObservation.h"
 #include "canvas/CompositionNode.h"
+#include "canvas/ResidentPreviewTextures.h"
 #include <QtTest>
 #include <QtEndian>
 #include <QQuickWindow>
@@ -1161,6 +1162,78 @@ private slots:
         QCOMPARE(client.frame(),original);QVERIFY(client.lastError().isEmpty());
         save("transform-"+QString::fromLatin1(QTest::currentDataTag()),{{"passed",true},{"software_fallback",software},{"commit",commit},{"precise_capability",precise},{"side",side}});
     }
+    void adaptiveMipSelection(){
+        QCOMPARE(ResidentPreviewTextures::mipLevel(.1),3);
+        QCOMPARE(ResidentPreviewTextures::mipLevel(.15),2);
+        QCOMPARE(ResidentPreviewTextures::mipLevel(.5),0);
+        QCOMPARE(ResidentPreviewTextures::mipLevel(1),0);
+        QCOMPARE(ResidentPreviewTextures::mipLevel(3),0);
+        QCOMPARE(ResidentPreviewTextures::mipLevel(.1,true),0);
+        QCOMPARE(ResidentPreviewTextures::mipLevel(0),0);
+    }
+    void boundedToolPreview_data(){
+        QTest::addColumn<bool>("liquify");QTest::addColumn<bool>("selected");QTest::addColumn<bool>("highest");
+        for(bool liquify:{false,true})for(bool selected:{false,true})for(bool highest:{false,true})
+            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(liquify?"liquify":"transform",selected?"selected":"whole",highest?"highest":"ordinary")))<<liquify<<selected<<highest;
+    }
+    void boundedToolPreview(){
+        QFETCH(bool,liquify);QFETCH(bool,selected);QFETCH(bool,highest);QTemporaryDir temp;
+        PaintCoreClient client(nullptr,temp.filePath("bounded-preview.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
+        QVERIFY(client.saveRenderSettings(512,512,highest));QTRY_COMPARE(client.highestCanvasQuality(),highest);
+        client.newDocument(9000,128);QTRY_VERIFY(client.documentWidth()==9000 && !client.layerEditBusy());
+        if(selected){QVERIFY(client.selectAll());QTRY_VERIFY(client.selectionEnabled() && !client.layerEditBusy());}
+        const auto selection=client.selectionSteps();const auto depth=client.undoDepth();
+        QQuickWindow window;window.resize(900,300);auto *canvas=new CanvasItem(window.contentItem());canvas->setSize({900,300});canvas->setClient(&client);
+        auto observed=std::make_shared<CanvasPresentationObservation>();canvas->observePresentation(observed);
+        window.show();QVERIFY(QTest::qWaitForWindowExposed(&window));canvas->fitToView();
+        if(window.rendererInterface()->graphicsApi()==QSGRendererInterface::Software)QSKIP("Requires GPU preview");
+        QTRY_VERIFY_WITH_TIMEOUT(client.compositionPacket() && canvas->compositionStatistics()["nodeRevision"].toULongLong()==client.revision(),30000);
+        QVERIFY(liquify?client.beginLiquify():client.beginTransform());
+        QTRY_VERIFY_WITH_TIMEOUT(liquify?!client.liquifyBusy():client.transformPoints().size()==16 && !client.transformBusy(),30000);
+        if(!liquify && highest){
+            // Highest quality retains the original exact compositor/fallback.
+            QVERIFY(!client.residentPreview() || !client.residentPreview()->meshPreview);
+            // This row allows the existing exact compositor or CPU fallback.
+            QVERIFY(client.transformControlsVisible());
+        }else{
+            QTRY_VERIFY_WITH_TIMEOUT(client.residentPreview(),30000);
+            if(!liquify)QTRY_VERIFY_WITH_TIMEOUT(client.transformControlsVisible(),30000);
+            const auto source=client.residentPreview();QTRY_VERIFY_WITH_TIMEOUT(source->uploads->load()==1,30000);
+            int edge=0;const auto measure=[&](const ResidentPreviewAssets &assets){for(const auto &image:assets.images)edge=std::max({edge,image.width(),image.height()});};
+            measure(*source);if(source->prepared)measure(*source->prepared);
+            if(highest)QVERIFY2(edge>4096,"Highest-quality liquify must keep native source texels when budget permits");
+            else if(liquify){QVERIFY(edge<=4096);QCOMPARE(edge,4096);}
+            else QVERIFY2(edge>4096,"Ordinary transform retains budgeted native CPU source texels");
+            QCOMPARE(client.selectionEnabled(),selected);QCOMPARE(client.selectionSteps(),selection);
+            if(!liquify){
+                QVERIFY(source->forward && source->meshPreview);QVERIFY(source->prepared || !selected);
+                if(source->prepared)QCOMPARE(source->prepared->uploads->load(),quint64(1));
+                const auto revision=client.revision();const auto pixels=canvas->compositionStatistics()["composedPixels"];
+                const auto moving=selected?source->prepared:std::static_pointer_cast<const ResidentPreviewAssets>(source);
+                const auto uploaded=moving->uploadedTextureBytes->load();QVERIFY(moving->sourceMip->load()>0);
+                QVERIFY(uploaded<quint64(moving->images[0].sizeInBytes()));
+                const auto initial=client.transformPoints();auto latest=initial;
+                for(int i=0;i<32;++i){latest=initial;for(auto &point:latest)point=point.toPointF()+QPointF(8+i,4);QVERIFY(client.updateTransform(latest,false,2));}
+                QTest::qWait(150);QCOMPARE(client.revision(),revision);QVERIFY(client.selectionEnabled()==selected);
+                const auto frame=client.residentPreview();QVERIFY(frame->geometrySequence>source->geometrySequence);
+                QCOMPARE(frame->sourceId,selected?source->prepared->sourceId:source->sourceId);
+                const auto assets=selected?source->prepared:std::static_pointer_cast<const ResidentPreviewAssets>(source);
+                for(int i=0;i<3;++i)QCOMPARE(frame->images[i].cacheKey(),assets->images[i].cacheKey());
+                QCOMPARE(frame->uploads->load(),quint64(1));QCOMPARE(frame->uploadedTextureBytes->load(),uploaded);QCOMPARE(canvas->compositionStatistics()["composedPixels"],pixels);
+                QTRY_VERIFY(observed->snapshot().identity.resident);
+                const auto smallMip=frame->sourceMip->load();canvas->actualSize();
+                QTRY_COMPARE_WITH_TIMEOUT(frame->sourceMip->load(),quint32(0),15000);
+                QTRY_VERIFY(frame->uploadedTextureBytes->load()>uploaded);
+                const auto nativeBytes=frame->uploadedTextureBytes->load();const auto nativeUploads=frame->uploads->load();
+                canvas->fitToView();QTRY_COMPARE(frame->sourceMip->load(),smallMip);QTest::qWait(100);
+                QCOMPARE(frame->uploadedTextureBytes->load(),nativeBytes);QCOMPARE(frame->uploads->load(),nativeUploads);
+            }
+        }
+        QVERIFY(liquify?client.finishLiquify(false):client.finishTransform(false));
+        QTRY_VERIFY_WITH_TIMEOUT(liquify?!client.liquifyActive() && !client.liquifyBusy():!client.transformActive() && !client.transformBusy(),30000);
+        QCOMPARE(client.selectionSteps(),selection);QCOMPARE(client.undoDepth(),depth);QVERIFY2(client.lastError().isEmpty(),qPrintable(client.lastError()));
+        canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
+    }
     void cachedTransformGeometrySession_data(){
         QTest::addColumn<bool>("selected");QTest::addColumn<bool>("warp");QTest::addColumn<int>("close");
         for(bool selected:{false,true})for(bool warp:{false,true})for(int close=0;close<5;++close)
@@ -1368,9 +1441,10 @@ private slots:
         QVERIFY(client.residentPreview()->meshPreview);QVERIFY(client.residentPreview()->fullResolution);
         QTRY_VERIFY(client.residentPreview()->prepared);
         const auto moving=client.residentPreview();const auto identity=moving->prepared;
-        QCOMPARE(moving->images[0].size(),QSize(qRound(initial[3].toPointF().x()-initial[0].toPointF().x())+2,
-            qRound(initial[12].toPointF().y()-initial[0].toPointF().y())+2));
-        QCOMPARE(moving->images[1].size(),QSize(width,height));
+        if(!wide){QCOMPARE(moving->images[0].size(),QSize(qRound(initial[3].toPointF().x()-initial[0].toPointF().x())+2,
+            qRound(initial[12].toPointF().y()-initial[0].toPointF().y())+2));QCOMPARE(moving->images[1].size(),QSize(width,height));}
+        else QVERIFY(moving->images[1].width()>4096);
+        QVERIFY(client.selectionEnabled());QCOMPARE(client.selectionSteps(),selection);
         // Every accepted input must move the GUI mesh synchronously, without an actor round trip.
         for(int i=0;i<24;++i){
             latest=initial;for(auto &point:latest)point=point.toPointF()+QPointF(80+i,15);
@@ -1386,7 +1460,14 @@ private slots:
         const auto nodeMs=elapsed.elapsed();
         QVERIFY(client.updateTransform(initial,false,2));QCOMPARE(client.residentPreview()->sourceId,identity->sourceId);
         QVERIFY(client.updateTransform(latest,warp,2));QCOMPARE(client.residentPreview()->sourceId,moving->sourceId);
-        QTRY_VERIFY(moving->uploads->load()==1 && identity->uploads->load()==1);
+        QTRY_VERIFY(moving->uploads->load()>0 && identity->uploads->load()>0);
+        // Early input may choose additional mip levels while sources prepare.
+        // Warm both geometries, then require subsequent source switches to reuse them.
+        for(int i=0;i<2;++i){QVERIFY(client.updateTransform(initial,false,2));QTest::qWait(80);QVERIFY(client.updateTransform(latest,warp,2));QTest::qWait(80);}
+        const auto movingUploads=moving->uploads->load(),identityUploads=identity->uploads->load();
+        QVERIFY(client.updateTransform(initial,false,2));QTest::qWait(80);
+        QVERIFY(client.updateTransform(latest,warp,2));QTest::qWait(80);
+        QCOMPARE(moving->uploads->load(),movingUploads);QCOMPARE(identity->uploads->load(),identityUploads);
         qInfo()<<"selected entry controls/assets/latest node ms"<<controlsMs<<assetsMs<<nodeMs<<"early inputs"<<updates;
         QVERIFY(client.finishTransform(false));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy() && !client.residentPreview(),30000);
         QCOMPARE(client.undoDepth(),depth);QCOMPARE(client.selectionSteps(),selection);QVERIFY(client.lastError().isEmpty());

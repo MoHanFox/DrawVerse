@@ -402,7 +402,9 @@ public:
     bool layerMoveActive() const { return m_layerMoveActive; }
     bool transformActive() const {return m_transformActive;}
     Q_PROPERTY(bool transformControlsVisible READ transformControlsVisible NOTIFY transformChanged)
-    bool transformControlsVisible() const {return m_transformActive && !m_transformClosing;}
+    bool transformControlsVisible() const {return m_transformActive && !m_transformClosing &&
+        (!m_transformMeshPreview || (m_residentPreview && m_residentPreview->uploads->load()>0 &&
+        (!m_residentPreview->prepared || m_residentPreview->prepared->uploads->load()>0)));}
     bool transformBusy() const {return m_pendingTransform>m_completedSequence;}
     QVariantList transformPoints() const {return m_transformPoints;}
     bool transformWarp() const {return m_transformWarp;}

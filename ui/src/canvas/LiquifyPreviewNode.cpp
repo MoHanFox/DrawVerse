@@ -68,12 +68,14 @@ LiquifyPreviewNode::LiquifyPreviewNode() {
 }
 bool LiquifyPreviewNode::sync(QQuickWindow *window,const LiquifyPreviewFrame &frame,const QRectF &rect) {
     auto *m=static_cast<Material*>(material());
-    if(m_source!=frame.sourceId){
-        auto current=ResidentPreviewTextures::acquire(window,frame);
-        if(!current)return false;
-        auto prepared=frame.prepared?ResidentPreviewTextures::acquire(window,*frame.prepared):nullptr;
-        if(frame.prepared && !prepared)return false;
+    const qreal density=rect.width()/std::max(1,frame.documentSize.width())*window->effectiveDevicePixelRatio();
+    auto current=ResidentPreviewTextures::acquire(window,frame,&frame,density);
+    if(!current)return false;
+    auto prepared=frame.prepared?ResidentPreviewTextures::acquire(window,*frame.prepared,&frame,density):nullptr;
+    if(frame.prepared && !prepared)return false;
+    if(m_source!=frame.sourceId || m->sources[0]!=current || m_samplingRevision!=current->samplingRevision){
         m->sources={std::move(current),std::move(prepared)};
+        m_samplingRevision=m->sources[0]->samplingRevision;
         m->selected=!frame.selection.isNull();m->meshPreview=frame.meshPreview;m->identity=frame.identity;m_source=frame.sourceId;m_revision=0;markDirty(DirtyMaterial);
     }
     if(m->forward!=frame.forward){m->forward=frame.forward;markDirty(DirtyMaterial);}

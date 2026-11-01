@@ -1189,3 +1189,31 @@ DrawVerse 已有缓存三源、本地几何直发及 mip，但 `PaintCoreClient:
 四ABI最终 `cached-session-abi-final.txt` 全通过；初次 `cached-session-abi.txt` 旧夹具假定最少19顶点失败，现明确断言仿射2×2及Warp原19–145密度，结构/version/字节及原子缓冲契约不变，并更新contracts说明。相关core/render all-targets严格Clippy、fmt、生成头检查和diff检查通过，初次新增测试range-loop lint失败及修正后日志分别保留。未跑总check。
 
 标准应用对象重新编译，标准EXE因用户进程占用链接LNK1104，记录 `cached-session-app-build.txt`；未关闭标准版或LargeCanvasTransformReview。独立 `build/bin/CachedTransformReview/drawverse.exe` 链接当前静态核心/UI，SHA256 `72F1997CA193197B6EB384FB7EC3ADE484CC29B28F2EDBB78118FB8B8938F183`。嵌入shader精确检查通过；独立profile/D3D11 `--preview` 冒烟退出0，`cached-session-smoke.png` 三笔可见并人工查看。标准EXE未替换。
+
+### 2026-11-01：选区清除与进度恢复（快速定向验证）
+
+历史记录：本节的“消耗选区”行为已按用户后续要求撤回，原日志保留；当前选区语义与验证见下一节。
+
+- 核心 3 个定向测试通过：消耗选区的普通/延迟会话与移动/不移动、取消/确认/撤销/重做；六插值及普通/Warp 原图像素独立参考；8888×5000 白层/内容小套索普通/Warp。日志：`build/selection-clear-core-final.txt`、`build/selection-clear-sampling.txt`、`build/selection-clear-large.txt`。初始新增夹具误用 geometry 返回类型编译失败保留在 `build/selection-clear-core.txt`，修正后通过。
+- 实际 Windows/D3D11 四个缓存会话功能行通过：selected affine/Warp × cancel/commit，检查活动/确认后选区清除、取消/撤销原选区及原像素恢复。`build/selection-clear-window.txt`（含初始化/清理 6 passed）。
+- 完整 QML 两个进度功能通过：4K 实际计算计数、可配置延迟、确认变换、GUI 心跳与多文档归属/偏好恢复。`build/selection-progress-window.txt`（含初始化/清理 4 passed）。
+- Release 构建和生成头检查通过，标准 `build/bin/Release/drawverse.exe` 已更新；`cargo fmt`/diff 空白检查通过。按用户要求只做快速定向验证，未跑总 check、四 ABI 矩阵、新持续性能或实体手感测试。进度恢复不表示原图收尾计算耗时已解决。
+
+标准 Release 独立 profile 的 D3D11 预览冒烟正常结束，`build/selection-progress-smoke.png` 人工查看为完整窗口及三条正常笔触。
+
+
+### 2026-11-01：保留选区、按需 mip 与进度续接（快速定向验证）
+
+最终用户选择为 PhotoCraft 策略：自由变换保留预算内原始 CPU 源，按显示尺度缓存 mip，不设固定 4096 源边长；液化普通代理独立最长 4096，最高画质按设备预算。参考本地 `D:/PhotoCraft/photocraft-main/crates/ui-egui/src/transform_tex.rs` 的 `PreviewTextures::choose/pick`：低于半屏幕像素选择惰性 mip，最近邻保留源级，逐层按会话缓存。DrawVerse 不照搬 PhotoCraft 先上传 level0 的顺序，只上传实际用到的层级。最终原图采样与历史保持，选区恢复原确认/取消语义。
+
+- `build/bounded-preview-session.txt`：FFI 延迟进入/选区源对/几何更新单项通过；本轮未修改核心变换像素算子。
+- `build/adaptive-mip-verified.txt`：实际 Windows/D3D11 15 功能通过（17 passed 含 init/cleanup），包括 mip 选择、变换/液化×有无选区×两画质 8 行、选区普通/Warp×确认/取消 4 行、9000 宽和小图准备期连续输入 2 行。普通变换保留超过 4096 的 CPU 源；低缩放只上传较小 mip，平移不增加上传、核心 revision 不变；100% 后缩回不增加纹理创建/上传；原位/移动源切换预热后无新增上传。取消保留原选区/历史，确认/撤销恢复原像素与选区。
+- `build/adaptive-mip-progress-liquify.txt`：完整 QML 的进度实际计数/配置延迟/GUI 心跳、文档归属，以及硬/羽化套索液化 GPU 预览与未选区像素保护共 4 功能通过（6 passed 含 init/cleanup）。
+- `build/adaptive-mip-drag.txt`：8888×5000、10%、普通画质、完整 Main.qml API 输入的白层小套索 affine / 大套索 affine / 大套索 Warp 三功能通过（5 passed 含 init/cleanup），采用节点 135/149/71，帧间隔 P95 22.887/19.155/39.085ms，节点年龄 P95 24.106/18.361/36.336ms。三行选区保留、核心 revision 稳定、主合成像素计数稳定；CPU 源边长 8888，选中移动源 mip2，累计新纹理像素字节约 11.1/20.1/20.1MB（不含遮罩，不等于驱动显存占用）。准备分别 1081/5875/4751ms，首次两源上传包含在准备等待中。这三行完成于将最坏长条 mip 预算从 4/3 纠正为 2 倍前；后续预算修订未改变 mip 选择算法，最终窗口功能与预算测试见上列及下一行。
+- `build/adaptive-mip-native.txt`：最终预算代码的完整 QML 窗口合成鼠标大套索 affine 单功能通过（3 passed 含 init/cleanup），76 输入/72 采用节点，帧间隔 P95 49.581ms、节点年龄 49.322ms，核心 revision/源/上传/主合成像素保持。该轮仍有较高间隔，不能称跟手已解决；QTest 窗口事件也不等于实体设备或物理屏幕延迟。
+
+调查/失败保留：`build/preview-proxy-before.txt` 的旧版 affine-3 仅一个输入、无采用节点而失败，affine-5 帧间隔 P95 126.753ms。前后准备就绪门槛改变且不是同期配对，不能据此宣称固定倍数提升。首次运行旧测试 EXE 不识别新增函数，随后增量重建解决。`adaptive-mip-targeted.txt` 最高画质整白层错误地要求 BEGIN 必定有精确 GPU transform packet；最终行允许原精确合成或 CPU 后备，只断言未走普通 mesh 路径及控制可用，不宣称该行 GPU 通过。`adaptive-mip-final-targeted.txt` 原 9000 宽测试要求准备期只能有一次上传而失败；惰性 mip 在准备期几何变化时可能首次上传新层级，现保留连续输入/几何/源身份断言，新增两几何预热后再切换无新增上传的严格检查，最终通过。
+
+`adaptive-mip-budget-build.txt`/`adaptive-mip-fixture-build.txt` Release 构建、生成头检查通过；`cargo fmt --manifest-path core/Cargo.toml --all --check` 与 `git diff --check` 通过。省略 `--all` 的首次 fmt 命令报无 targets，未记为通过。无 ABI 布局/文档格式变化。按用户要求只做定向验证，未跑总 check/四 ABI 全矩阵/新全量性能或同期 PhotoCraft 配对；复杂栈后备、真实驱动 OOM、实体输入与物理屏幕未测。预览缓存不表示确认/结束时原图计算已经加速。
+
+标准 `build/bin/Release/drawverse.exe` 已更新。独立 profile 的 D3D11 `--preview` 正常生成 `build/adaptive-mip-smoke.png` 后进程结束，stderr 为空；人工查看为完整窗口及三条正常笔触，未测实体交互。
