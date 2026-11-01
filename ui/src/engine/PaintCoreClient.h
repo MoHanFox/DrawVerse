@@ -227,7 +227,7 @@ public:
     void setLongTaskDelay(int value);
     void restoreLongTaskDelay(int value);
     QVariantMap renderSettings() const;
-    Q_INVOKABLE bool saveRenderSettings(int memoryMiB, int gpuMiB, bool highestQuality = false);
+    Q_INVOKABLE bool saveRenderSettings(int memoryMiB, int gpuMiB);
     QVariantMap storageSettings() const { return m_storageSettings; }
     QVariantMap activeStorageSettings() const { return m_activeStorageSettings; }
     QVariantMap storageInfo() const { return m_storageInfo; }
@@ -238,7 +238,6 @@ public:
     QString computeDevice() const { return m_computeDevice; }
     QString computeStatus() const { return m_computeStatus; }
     bool computeBusy() const { return m_computeBusy; }
-    bool highestCanvasQuality() const { return m_highestCanvasQuality && gpuAccelerationEnabled(); }
     bool gpuAccelerationEnabled() const { return m_computeDevice != "cpu"; }
     bool gpuCompositionEnabled() const { return gpuAccelerationEnabled() && compositionDisplayRequested(); }
     bool residentGpuPreviewEnabled() const { return gpuAccelerationEnabled() && m_residentGpuPreviewAvailable; }
@@ -638,7 +637,6 @@ private:
     int m_longTaskDelay=1000;
     QVariantMap m_storageSettings, m_activeStorageSettings, m_storageInfo;
     QVariantList m_computeHardware;
-    bool m_highestCanvasQuality=false;
     QString m_computeDevice = "auto", m_computeStatus = "正在初始化计算硬件…";
     bool m_computeBusy = false;
     QString m_storageMessage;

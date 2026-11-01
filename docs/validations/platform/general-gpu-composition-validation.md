@@ -1228,3 +1228,16 @@ DrawVerse 已有缓存三源、本地几何直发及 mip，但 `PaintCoreClient:
 - `build/transform-cancel-progress-build.txt`、`transform-cancel-tests-build.txt`、`transform-cancel-progress-fixture-build.txt` 定向 Release 测试构建和生成头检查通过；fmt all/check、diff 空白检查通过。未跑总 check、四 ABI 或全性能矩阵。
 
 标准 `build/bin/Release/drawverse.exe` 被用户进程占用，`transform-commit-progress-build.txt` 保留 LNK1104，未关闭用户程序，标准 EXE 仍是上一轮版本。按构建系统现有链接参数将本轮静态核心/UI链接到同目录独立 `build/bin/Release/drawverse-transform-review.exe`，`transform-review-link.txt` exit0，SHA256 `985620B045887CAD05832E9C6711D7295FAF48EC8CAA3B308EC8E334C4EDDB34`。独立 profile D3D11 `--preview` exit0，stderr 空，`transform-cancel-smoke.png` 人工查看三条笔触及完整窗口正常。
+
+
+### 2026-11-01：完整删除最高质量模式（快速定向验证）
+
+开始改造前工作树干净，`git push origin develop` 返回 Everything up-to-date，原状态 `8ef46a9` 已在远端。生产实现删除质量入口/内部状态/getter/三参数保存/后台质量消息以及所有质量分支，统一此前关闭路径；源码搜索除旧 INI 键清理外无运行时质量开关。测试中该键仅用来验证迁移，历史文档记录不删除。
+
+- `build/remove-quality-settings.txt`：跨进程旧 false/true/未设置三行与渲染预算保存一行，共4功能通过（6 passed 含 init/cleanup）。旧键清除，renderSettings 不再含字段，首选项无控件，保存后不恢复该键。
+- `build/remove-quality-preferences.txt`：完整 Main.qml 首选项打开/保存/重开、无质量入口、CPU选择保存后仍CPU、重开客户端无质量字段，1功能通过（3 passed 含 init/cleanup），QML无警告。
+- `build/remove-quality-verified.txt`：D3D11 9000宽整层/选区自由变换、整层/选区液化4行、4096文档视口导航/曲线1行、25笔持续绘画增量/资源复用/独立CPU对照1行，6功能通过。该组合最后的大画布取消在最初合成包采用等待失败，整体8 passed/1 failed含init/cleanup，不写为全绿；`build/remove-quality-large-cancel.txt` 独立进程同一8888×5000行通过（3 passed 含init/cleanup），零延迟无误进度、取消同步原位源/几何与最终像素/原选区/历史恢复，最终取样就绪256ms，非实体/物理屏幕结论。未统一归因混合初始化失败。
+
+调查保留：`remove-quality-gpu.txt`/`remove-quality-gpu-final.txt` 包含退役最高质量整图原尺寸绘画夹具的手动视口改造失败（脏区不满足旧4096像素断言），前者另含尝试关闭resident来进入9000精确路径失败（该能力同时限制该入口）。这两类场景原先通过最高质量开关选择产品路径，现随用户要求完整退役：不增加新隐藏开关、不修改生产损伤算法来满足已删除模式；常规绘画增量与独立CPU像素对照由现存25笔测试验证。初次“保留固定false接口”草稿的构建 `remove-highest-quality-build.txt` 不代表最终实现，用户澄清后该接口已彻底删除。
+
+`remove-quality-feature-build.txt`、`remove-quality-final-build.txt`、`remove-quality-retired-tests-build.txt` Release相关目标/生成头构建通过，diff空白检查通过。标准 `build/bin/Release/drawverse.exe` 已更新，SHA256 `903B2C65434C1AF6F7E548D660C76C5AEF6EE116D24548BB5267C8E6E3F34825`。独立profile D3D11 --preview exit0、stderr空，`build/remove-quality-smoke.png` 人工查看完整窗口/三笔正常。用户运行中的旧 `drawverse-transform-review.exe` 进程保持，标准版与旧review不同。按要求只做快速定向验证，无总check/完整ABI矩阵/新性能或手感改善结论。

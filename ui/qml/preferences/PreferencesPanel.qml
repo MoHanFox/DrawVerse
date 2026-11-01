@@ -27,7 +27,6 @@ Dialog {
         storageMemory.value = Number(values.memoryMiB)
         selectedComputeDevice = PaintClient.computeDevice
         syncComputeSelection()
-        highestQuality.checked = PaintClient.renderSettings.highestQuality
         storageScratch.value = Number(values.scratchGiB || 8)
         storageReserve.value = values.reserveMiB === undefined ? 512 : Number(values.reserveMiB)
         historyLimit.value = PaintClient.historyLimit
@@ -92,7 +91,7 @@ Dialog {
                                 onModelChanged: Qt.callLater(root.syncComputeSelection)
                                 onCountChanged: Qt.callLater(root.syncComputeSelection)
                                 displayText: currentIndex >= 0 ? currentText : (count === 0 ? "正在读取计算硬件…" : "已保存的设备暂不可用")
-                                onActivated: { root.selectedComputeDevice = currentValue; if(currentValue === "cpu")highestQuality.checked = false }
+                                onActivated: root.selectedComputeDevice = currentValue
                             }
                             Label {
                                 objectName: "computeStatus"
@@ -107,10 +106,6 @@ Dialog {
                                 Label {text:"毫秒";color:Theme.muted;font.pixelSize:9}
                             }
                             Label {text:"计算超过此时间才显示进度；0 为立即显示。";color:Theme.muted;font.pixelSize:8;Layout.fillWidth:true}
-                            CheckBox { id: highestQuality; objectName: "highestCanvasQuality"; text: "渲染画布最高质量"; checked: false
-                                onToggled: if(checked && root.selectedComputeDevice === "cpu")root.selectedComputeDevice = "auto"
-                            }
-                            Label { text: "最高质量保留整张画布的原分辨率GPU合成，包括视口外；需要GPU加速，保存后生效。"; wrapMode: Text.WordWrap; Layout.fillWidth: true; color: Theme.muted; font.pixelSize: 9 }
                             Label { text: "存储与缓存（下次启动生效）"; font.pixelSize: 10; color: Theme.accent }
                             GridLayout {
                                 columns: 2; columnSpacing: 12; rowSpacing: 8; Layout.fillWidth: true
@@ -226,8 +221,7 @@ Dialog {
             Button {
                 objectName: "saveStorageSettings"; text: "保存设置"; enabled: !PaintClient.storageBusy && !PaintClient.computeBusy && !PaintClient.drawing
                 onClicked: {
-                    if(highestQuality.checked && root.selectedComputeDevice === "cpu")root.selectedComputeDevice = "auto"
-                    PaintClient.saveRenderSettings(renderMemory.value, renderGpu.value, highestQuality.checked)
+                    PaintClient.saveRenderSettings(renderMemory.value, renderGpu.value)
                     PaintClient.historyLimit = historyLimit.value
                     PaintClient.longTaskDelay = taskProgressDelay.value
                     PaintClient.saveStorageSettings(storageDirectory.text, storageMemory.value, storageScratch.value, storageReserve.value)

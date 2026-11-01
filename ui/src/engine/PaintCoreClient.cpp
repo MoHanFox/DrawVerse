@@ -66,7 +66,6 @@ struct BackendConnection {
     CompositionViewRequest compositionView;
     std::atomic_bool residentPreviewPending{false};
     std::atomic_bool transformMeshAssets{false};
-    std::atomic_bool highestPreviewQuality{false};
     std::atomic_bool transformSourcePairSupported{false};
     std::atomic<quint32> transformMaxEdge{0};
     std::atomic<quint64> transformMaxBytes{0};
@@ -183,7 +182,7 @@ public:
     void saveCompute(const QString &id) {
         if(!m_session || m_stopped)return;
         auto settings=preferences();settings->setValue("performance/computeDevice",id);settings->sync();
-        if(settings->status()!=QSettings::NoError){emit computeState(m_computeHardware,m_computeDevice,QStringLiteral("无法保存 GPU 设置"),false,settings->value("performance/highestQuality",false).toBool());return;}
+        if(settings->status()!=QSettings::NoError){emit computeState(m_computeHardware,m_computeDevice,QStringLiteral("无法保存 GPU 设置"),false);return;}
         pollCompute(true);
     }
     void pollCompute(bool force=false) {
@@ -201,7 +200,7 @@ public:
         QString status=QStringLiteral("正在初始化计算硬件…");
         const bool busy=info.completed_sequence<m_computeSequence;
         if(!busy){uint64_t size=0;if(paint_session_compute_status(m_core,m_session,nullptr,0,&size)==PAINT_BUFFER_TOO_SMALL && size<=65536){QByteArray bytes(qsizetype(size),'\0');if(paint_session_compute_status(m_core,m_session,reinterpret_cast<uint8_t*>(bytes.data()),size,&size)==PAINT_OK)status=QString::fromUtf8(bytes);}}
-        emit computeState(m_computeHardware,m_computeDevice,status,busy,settings->value("performance/highestQuality",false).toBool());
+        emit computeState(m_computeHardware,m_computeDevice,status,busy);
     }
     void saveStorage(const QVariantMap &values) { evaluateStorage(values, true); }
     void prepareBrushPreferences(QByteArray json) {
@@ -342,7 +341,7 @@ signals:
     void brushPreviewReady(QString id,quint64 token,QString image);
     void storageState(QVariantMap saved, QVariantMap active, QVariantMap info, QString message);
     void storageDone(bool success);
-    void computeState(QVariantList hardware,QString device,QString status,bool busy,bool highestQuality);
+    void computeState(QVariantList hardware,QString device,QString status,bool busy);
     void metadata(PaintSessionInfo info, QVariantList layers, QVariantMap selection, QVariantList history,QVariantMap transform,QVariantList committedStrokes);
     void thumbnailReady(quint64 generation, quint64 revision, quint64 layer, QString image);
     void pixels(int view, QImage image, QRectF region, quint64 generation, quint64 revision, quint64 request, quint64 frameId);
@@ -700,7 +699,7 @@ public:
         // Transform retains native source texels within the negotiated budget.
         // Liquify independently uses a bounded ordinary-quality proxy.
         const auto hardwareEdge=m_connection->transformMaxEdge.load();
-        const auto edge=next->forward || m_connection->highestPreviewQuality.load()?hardwareEdge:std::min(hardwareEdge,4096u);
+        const auto edge=next->forward?hardwareEdge:std::min(hardwareEdge,4096u);
         auto currentInfo=dto<PaintSessionInfo>();
         if(paint_session_info(m_core,m_session,&currentInfo)!=PAINT_OK)return;
         const bool fullResolution=m_fullResolutionResidentSupported && edge &&
@@ -1052,7 +1051,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         CompositionBudget::memoryBytes=quint64(values["memoryMiB"].toInt())*1024*1024;
         auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);
         CompositionBudget::cacheBytes=quint64(std::clamp(settings->value("storage/memoryMiB",defaultMemoryMiB()).toInt(),64,1048576))*1024*1024;
-        m_highestCanvasQuality=values["highestQuality"].toBool();m_connection->highestPreviewQuality.store(m_highestCanvasQuality);
+        settings->remove("performance/highestQuality");settings->sync();
         const auto gpu=values["gpuMiB"].toInt();
         CompositionBudget::automaticGpu=gpu==0;
         CompositionBudget::gpuBytes=gpu?quint64(gpu)*1024*1024:CompositionBudget::memoryBytes.load();
@@ -1211,13 +1210,10 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     connect(m_worker,&BackendWorker::storageDone,this,[this](bool success) {
         m_storageBusy=false; emit storageChanged(); emit storageFinished(success);
     });
-    connect(m_worker,&BackendWorker::computeState,this,[this](QVariantList hardware,QString device,QString status,bool busy,bool highestQuality) {
-        const bool qualityChanged=m_highestCanvasQuality!=highestQuality;
-        if(m_computeHardware==hardware && m_computeDevice==device && m_computeStatus==status && m_computeBusy==busy && !qualityChanged)return;
-        m_highestCanvasQuality=highestQuality;m_connection->highestPreviewQuality.store(highestQuality);
+    connect(m_worker,&BackendWorker::computeState,this,[this](QVariantList hardware,QString device,QString status,bool busy) {
+        if(m_computeHardware==hardware && m_computeDevice==device && m_computeStatus==status && m_computeBusy==busy)return;
         const bool deviceChanged=m_computeDevice!=device;
         m_computeHardware=std::move(hardware);m_computeDevice=std::move(device);m_computeStatus=std::move(status);m_computeBusy=busy;
-        if(qualityChanged)emit stateChanged();
         if(deviceChanged){
             clearLayerMovePreparation();
             clearCompositionEdit();
@@ -1757,7 +1753,7 @@ void PaintCoreClient::setTransformPreviewLimits(int edge,quint64 availableGpuByt
 bool PaintCoreClient::preferTransformMeshPreview() const {
     // The three-image split is valid only for a single Normal root and a
     // Normal foreground. Keep the exact compositor for every other stack.
-    if(!residentGpuPreviewEnabled() || !gpuCompositionEnabled() || highestCanvasQuality() ||
+    if(!residentGpuPreviewEnabled() || !gpuCompositionEnabled() ||
        (selectionEnabled() && !m_connection->transformSourcePairSupported.load()) ||
        !m_connection->transformMaxEdge.load() || m_connection->transformMaxBytes.load()<(selectionEnabled()?72u:36u))return false;
     const auto targets=currentMoveTargets();if(targets.size()!=1)return false;
@@ -1923,9 +1919,8 @@ void PaintCoreClient::setCompositionDevice(quint64 epoch,bool enabled){
     const bool retainSources=enabled && gpuCompositionEnabled() && !m_closing &&
         (m_transformActive || m_liquifyActive || m_layerMoveActive);
     enabled=enabled && gpuCompositionEnabled() && !m_closing && m_ready && !m_transformActive && !m_liquifyActive && !m_layerMoveActive && !m_blendPreviewLayer;
-    const bool native=highestCanvasQuality() && m_width<=8192 && m_height<=8192 && quint64(m_width)*m_height<=CompositionBudget::viewPixels();
-    const QRectF targetRegion=native?QRectF(0,0,m_width,m_height):m_requestedRegions[0];
-    const QSize targetPixels=native?QSize(int(m_width),int(m_height)):m_requestedPixels[0];
+    const QRectF targetRegion=m_requestedRegions[0];
+    const QSize targetPixels=m_requestedPixels[0];
     enabled=enabled && targetPixels.width()<=8192 && targetPixels.height()<=8192 &&
         quint64(targetPixels.width())*targetPixels.height()<=CompositionBudget::viewPixels();
     {
@@ -1990,7 +1985,7 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
     if (status == PAINT_OK) {
         m_requests[view] = request; m_requestedRegions[view] = region; m_requestedPixels[view] = pixels; m_viewEnabled[view] = enabled;
         if (!enabled) { m_frames[view] = {}; m_regions[view] = {}; emit frameChanged(); }
-        if(view==0 && enabled && !highestCanvasQuality() && m_compositionEditBase &&
+        if(view==0 && enabled && m_compositionEditBase &&
            (m_compositionEditBase->region!=region || m_compositionEditBase->pixels!=pixels)){
             const double scale=std::min(region.width()/pixels.width(),region.height()/pixels.height());
             const int lod=scale>=1?int(std::floor(std::log2(scale))):0;
@@ -2010,7 +2005,7 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
             }
             emit frameChanged();
         }
-        if(view==0 && enabled && !highestCanvasQuality() && m_adjustmentBase && (m_adjustmentBase->region!=region || m_adjustmentBase->pixels!=pixels)){
+        if(view==0 && enabled && m_adjustmentBase && (m_adjustmentBase->region!=region || m_adjustmentBase->pixels!=pixels)){
             const double scale=std::min(region.width()/pixels.width(),region.height()/pixels.height());const int lod=scale>=1?int(std::floor(std::log2(scale))):0;
             if(pixels.width()>8192 || pixels.height()>8192 || quint64(pixels.width())*pixels.height()>CompositionBudget::viewPixels() || lod>6){
                 m_adjustmentBase.reset();m_adjustmentFrame.reset();m_adjustmentFinalRevision=0;emit stateChanged();
@@ -2020,7 +2015,7 @@ void PaintCoreClient::requestViewport(int view, QRectF region, QSize pixels, boo
             }
             emit frameChanged();
         }
-        if(view==0 && enabled && m_compositionPacket && !m_compositionEditBase && !m_adjustmentBase && !highestCanvasQuality() &&
+        if(view==0 && enabled && m_compositionPacket && !m_compositionEditBase && !m_adjustmentBase &&
            m_compositionPacket->info.key.revision==m_revision && quint64(pixels.width())*pixels.height()<=CompositionBudget::viewPixels()){
             auto next=std::make_shared<CompositionPacket>(*m_compositionPacket);
             next->region=region;next->pixels=pixels;
@@ -3009,15 +3004,13 @@ bool PaintCoreClient::inspectStorage() {
 QVariantMap PaintCoreClient::renderSettings() const {
     auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);
     return {{"memoryMiB",std::clamp(settings->value("performance/memoryMiB",defaultMemoryMiB()).toInt(),512,1048576)},
-            {"gpuMiB",std::clamp(settings->value("performance/gpuMiB",0).toInt(),0,1048576)},
-            {"highestQuality",settings->value("performance/highestQuality",false).toBool()}};
+            {"gpuMiB",std::clamp(settings->value("performance/gpuMiB",0).toInt(),0,1048576)}};
 }
-bool PaintCoreClient::saveRenderSettings(int memoryMiB,int gpuMiB,bool highestQuality) {
+bool PaintCoreClient::saveRenderSettings(int memoryMiB,int gpuMiB) {
     if(memoryMiB<512 || memoryMiB>1048576 || gpuMiB<0 || gpuMiB>1048576)return false;
     auto settings=m_settingsFile.isEmpty()?std::make_unique<QSettings>(QSettings::IniFormat,QSettings::UserScope,"DrawVerse","DrawVerse"):std::make_unique<QSettings>(m_settingsFile,QSettings::IniFormat);
-    settings->setValue("performance/memoryMiB",memoryMiB);settings->setValue("performance/gpuMiB",gpuMiB);settings->setValue("performance/highestQuality",highestQuality);settings->sync();
+    settings->setValue("performance/memoryMiB",memoryMiB);settings->setValue("performance/gpuMiB",gpuMiB);settings->sync();
     if(settings->status()!=QSettings::NoError)return false;
-    if(m_highestCanvasQuality!=highestQuality){m_highestCanvasQuality=highestQuality;m_connection->highestPreviewQuality.store(highestQuality);emit stateChanged();}
     emit storageChanged();return true;
 }
 bool PaintCoreClient::saveStorageSettings(const QString &directory,int memoryMiB,int scratchGiB,int reserveMiB) {
@@ -3085,7 +3078,7 @@ bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int i
     auto geometry=dto<PaintTransform>();geometry.warp=warp;geometry.interpolation=interpolation;
     geometry.skew_h=qIsFinite(skewH)?skewH:m_transformSkewH;geometry.skew_v=qIsFinite(skewV)?skewV:m_transformSkewV;
     for(int i=0;i<16;++i){const auto p=points[i].toPointF();geometry.points[i*2]=p.x();geometry.points[i*2+1]=p.y();}
-    const bool local=m_transformMeshPreview && residentGpuPreviewEnabled() && !highestCanvasQuality() &&
+    const bool local=m_transformMeshPreview && residentGpuPreviewEnabled() &&
         !m_cpuSamplingRequired && !transformBusy() && m_residentPreview && m_residentPreview->forward && !m_residentPreview->vertices.isEmpty();
     // A cached session owns immutable pixels. Validate and display absolute input
     // locally; only history boundaries need another authoritative actor update.

@@ -114,14 +114,14 @@ private slots:
             QTest::newRow(qPrintable(QString("%1-%2").arg(warp?"warp":"affine").arg(fixture)))<<fixture<<warp;
     }
     void largeCanvasTransformContinuous() {
-        QFETCH(int,fixture);QFETCH(bool,warp);constexpr bool highest=false;const bool native=qEnvironmentVariableIntValue("DRAWVERSE_LARGE_TRANSFORM_NATIVE")!=0;QTemporaryDir temp;
+        QFETCH(int,fixture);QFETCH(bool,warp);const bool native=qEnvironmentVariableIntValue("DRAWVERSE_LARGE_TRANSFORM_NATIVE")!=0;QTemporaryDir temp;
         PaintCoreClient client(nullptr,temp.filePath("large-drag.ini"));WorkspaceManager workspace(temp.filePath("layout.ini"));QQmlApplicationEngine engine;
         engine.rootContext()->setContextProperty("PaintClient",&client);engine.rootContext()->setContextProperty("Workspace",&workspace);
         engine.setInitialProperties({{"createInitialDocument",true}});engine.load(QUrl("qrc:/qml/app/Main.qml"));QVERIFY(!engine.rootObjects().isEmpty());
         auto *window=qobject_cast<QQuickWindow*>(engine.rootObjects().first());QVERIFY(window);window->showNormal();window->resize(1280,900);
         auto *documents=window->findChild<DocumentManager*>("documentManager");QVERIFY(documents);
         QTRY_VERIFY(client.ready() && client.brushLibraryReady());client.newDocument(8888,5000);QTRY_VERIFY(client.documentWidth()==8888 && !client.layerEditBusy());
-        QVERIFY(client.saveRenderSettings(512,512,highest));QTRY_COMPARE(client.highestCanvasQuality(),highest);
+        QVERIFY(client.saveRenderSettings(512,512));
         if(fixture==1 || fixture==2 || fixture==4){client.addLayer("small stroke");QTRY_VERIFY(!client.layerEditBusy() && client.layers().size()==2);client.setBrushRadius(20);client.setBrushColor(Qt::blue);
             InputSample sample;sample.position={4200,2400};const auto depth=client.undoDepth();QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),depth+1);}
         if(fixture>=2){client.setSelectionFeather(4);
@@ -166,7 +166,7 @@ private slots:
         const auto resident=client.residentPreview();int textureEdge=0;quint64 textureBytes=0;
         const auto measure=[&](const ResidentPreviewAssets &assets){for(const auto &image:assets.images){textureEdge=std::max({textureEdge,image.width(),image.height()});textureBytes+=quint64(image.sizeInBytes());}};
         if(resident){measure(*resident);if(resident->prepared)measure(*resident->prepared);}
-        QJsonObject report{{"fixture",fixture},{"source_mip",resident?int(resident->sourceMip->load()):-1},{"uploaded_texture_bytes",resident?double(resident->uploadedTextureBytes->load()):0},{"texture_edge",textureEdge},{"texture_bytes",double(textureBytes)},{"selection_retained",client.selectionEnabled()},{"highest",highest},{"warp",warp},{"native",native},{"core_revision_before",double(coreRevision)},{"core_revision_after_drag",double(coreAfterDrag)},{"preparation_ms",preparationMs},{"inputs",index},{"frames",frames},{"node_updates",ages.size()},
+        QJsonObject report{{"fixture",fixture},{"source_mip",resident?int(resident->sourceMip->load()):-1},{"uploaded_texture_bytes",resident?double(resident->uploadedTextureBytes->load()):0},{"texture_edge",textureEdge},{"texture_bytes",double(textureBytes)},{"selection_retained",client.selectionEnabled()},{"warp",warp},{"native",native},{"core_revision_before",double(coreRevision)},{"core_revision_after_drag",double(coreAfterDrag)},{"preparation_ms",preparationMs},{"inputs",index},{"frames",frames},{"node_updates",ages.size()},
             {"input_p95_ms",percentile(intervals,.95)},{"input_max_ms",percentile(intervals,1.)},{"call_p95_ms",percentile(calls,.95)},
             {"node_age_p95_ms",percentile(ages,.95)},{"frame_p95_ms",percentile(frameIntervals,.95)},
             {"mesh",resident && resident->meshPreview},{"resident",bool(resident)},{"exact",bool(client.compositionPacket() && client.compositionPacket()->transform)},
@@ -174,7 +174,7 @@ private slots:
         QDir().mkpath("build");QFile file(QString("build/large-drag-%1-%2.json").arg(qEnvironmentVariable("DRAWVERSE_LARGE_TRANSFORM_RUN","baseline"),QTest::currentDataTag()));QVERIFY(file.open(QIODevice::WriteOnly));file.write(QJsonDocument(report).toJson());file.close();
         qInfo()<<"large canvas continuous"<<QTest::currentDataTag()<<"inputs/frames/nodes"<<index<<frames<<ages.size()<<"tick/call/node/frame P95"<<percentile(intervals,.95)<<percentile(calls,.95)<<percentile(ages,.95)<<percentile(frameIntervals,.95)<<"mesh/resident"<<bool(resident && resident->meshPreview)<<bool(resident);
         QVERIFY(index>10);
-        if(!highest){QCOMPARE(client.selectionEnabled(),fixture>=2);QCOMPARE(coreAfterDrag,coreRevision);QVERIFY2(resident && resident->meshPreview,"Ordinary large-canvas transforms must use cached geometry, including sparse layers and selections");
+        {QCOMPARE(client.selectionEnabled(),fixture>=2);QCOMPARE(coreAfterDrag,coreRevision);QVERIFY2(resident && resident->meshPreview,"Ordinary large-canvas transforms must use cached geometry, including sparse layers and selections");
             QVERIFY(source);QCOMPARE(resident->sourceId,source->sourceId);for(int i=0;i<3;++i)QCOMPARE(resident->images[i].cacheKey(),source->images[i].cacheKey());
             QVERIFY(lastSeen>0);QVERIFY(source->uploads->load()<=1);QCOMPARE(canvas->compositionStatistics()["composedPixels"],before["composedPixels"]);}
         QVERIFY(client.finishTransform(false));QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy(),30000);QCOMPARE(client.undoDepth(),depth);QVERIFY(client.lastError().isEmpty());
@@ -5378,14 +5378,12 @@ ParameterSlider {width:360;x:20;y:20;sliderName:"deferredSpacing";from:1;to:100;
         QCOMPARE(client.activeStorageSettings().value("memoryMiB").toInt(),defaultMemoryMiB());
         QVERIFY(QMetaObject::invokeMethod(dialog,"close")); QVERIFY(QMetaObject::invokeMethod(dialog,"open")); QTRY_VERIFY(!client.storageBusy());
         QCOMPARE(memory->property("value").toInt(),64); QCOMPARE(reserve->property("value").toInt(),0);
-        auto *quality=dialog->findChild<QObject*>("highestCanvasQuality");QVERIFY(quality);
-        QVERIFY(quality->setProperty("checked",false));QVERIFY(QMetaObject::invokeMethod(button,"clicked"));QTRY_VERIFY(!client.storageBusy() && !client.computeBusy());QVERIFY(!client.highestCanvasQuality());
-        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(!client.storageBusy());QVERIFY(!quality->property("checked").toBool());
+        QVERIFY(!dialog->findChild<QObject*>("highestCanvasQuality"));QVERIFY(!client.renderSettings().contains("highestQuality"));
         QVERIFY(client.saveComputeDevice("cpu"));QTRY_VERIFY(client.computeDevice()=="cpu" && !client.computeBusy());
         QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(!client.storageBusy());
-        QVERIFY(quality->setProperty("checked",true));QVERIFY(QMetaObject::invokeMethod(quality,"toggled"));QVERIFY(QMetaObject::invokeMethod(button,"clicked"));QTRY_VERIFY(!client.storageBusy() && client.computeDevice()=="auto" && !client.computeBusy());QVERIFY(client.highestCanvasQuality());
-        QVERIFY(QMetaObject::invokeMethod(dialog,"close"));QVERIFY(QMetaObject::invokeMethod(dialog,"open"));QTRY_VERIFY(!client.storageBusy());QVERIFY(quality->property("checked").toBool());
-        {PaintCoreClient reopened(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(reopened.ready());QVERIFY(reopened.highestCanvasQuality());}
+        QVERIFY(QMetaObject::invokeMethod(button,"clicked"));QTRY_VERIFY(!client.storageBusy() && !client.computeBusy());
+        QCOMPARE(client.computeDevice(),QStringLiteral("cpu"));QVERIFY(!client.renderSettings().contains("highestQuality"));
+        {PaintCoreClient reopened(nullptr,temp.filePath("storage.ini"));QTRY_VERIFY(reopened.ready());QVERIFY(!reopened.renderSettings().contains("highestQuality"));}
         QCOMPARE(warnings,QStringList()); QSignalSpy stopped(&client,&PaintCoreClient::stopped); client.shutdown(); QTRY_COMPARE(stopped.size(),1);
     }
     void storagePreferencesPersistOnlyAfterValidationAndApplyAfterRestart() {
