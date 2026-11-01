@@ -1195,12 +1195,11 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
             {"stage",qulonglong(progress.stage)},{"completed",qulonglong(progress.completed)},{"total",qulonglong(progress.total)},{"elapsedMs",qulonglong(progress.elapsed_ms)}};
         // The actor can finish before the final full-resolution frame is ready.
         // Keep an indeterminate finishing phase until that frame replaces the cache.
-        const bool preparing=m_transformActive && m_transformMeshPreview && !m_transformClosing && !visible;
         if(progress.state==PAINT_TASK_SUCCEEDED && progress.kind==PAINT_TASK_TRANSFORM &&
-           progress.document_generation==m_generation && (preparing || (progress.sequence==m_lastTransform &&
-           (m_transformClosing || (!m_transformActive && m_residentPreview && m_transformMeshPreview))))){
+           progress.document_generation==m_generation && progress.sequence==m_lastTransform &&
+           (m_transformClosing || (!m_transformActive && m_residentPreview && m_transformMeshPreview))){
             if(handoffSequence!=progress.sequence){handoffSequence=progress.sequence;handoffClock.start();}
-            values["state"]=PAINT_TASK_RUNNING;values["phase"]=preparing?0:3;values["completed"]=0;values["total"]=0;
+            values["state"]=PAINT_TASK_RUNNING;values["phase"]=3;values["completed"]=0;values["total"]=0;
             values["elapsedMs"]=qulonglong(progress.elapsed_ms+quint64(handoffClock.elapsed()));
         }else{handoffSequence=0;handoffClock.invalidate();}
         if(m_computationProgress!=values){m_computationProgress=values;emit computationProgressChanged();}
@@ -1407,7 +1406,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     });
     connect(m_worker,&BackendWorker::residentPreviewReady,this,[this](ResidentPreviewPtr preview){
         m_connection->residentPreviewPending.store(false);
-        if(m_closing || m_pendingNew || preview->generation!=m_generation || preview->revision<m_residentPreviewFloor || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive))return;
+        if(m_closing || m_pendingNew || preview->generation!=m_generation || preview->revision<m_residentPreviewFloor ||
+           (m_transformClosing && m_transformMeshPreview) || (!m_liquifyActive && !m_layerMoveActive && !m_transformActive))return;
         InteractionTrace::Scope trace("move.gui.acceptResident");
         if(trace.active)trace.event.value=double(preview->revision);
         InteractionTrace::point("move.gui.resident.source",double(preview->sourceId));
@@ -3100,6 +3100,14 @@ bool PaintCoreClient::updateTransform(const QVariantList &points,bool warp,int i
 bool PaintCoreClient::checkpointTransform(){return m_transformActive && !m_transformClosing && submitTransform(PAINT_TRANSFORM_CHECKPOINT);}
 bool PaintCoreClient::finishTransform(bool commit){
     if(!m_transformActive || m_transformClosing || !submitTransform(commit?PAINT_TRANSFORM_COMMIT:PAINT_TRANSFORM_CANCEL))return false;
+    if(!commit && m_transformMeshPreview && m_transformInitialPoints.size()==16){
+        // Restore cached original pixels immediately. The actor and primary
+        // compositor can acknowledge cancellation without holding this picture.
+        auto initial=dto<PaintTransform>();initial.warp=m_transformInitialWarp;initial.interpolation=m_transformInitialInterpolation;
+        initial.skew_h=m_transformInitialSkewH;initial.skew_v=m_transformInitialSkewV;
+        for(int i=0;i<16;++i){const auto p=m_transformInitialPoints[i].toPointF();initial.points[i*2]=p.x();initial.points[i*2+1]=p.y();}
+        if(refreshTransformMeshPreview(&initial))emit frameChanged();
+    }
     m_transformClosing=true;emit transformChanged();
     if(!commit && m_compositionTransform){auto frame=std::make_shared<CompositionPacket>(*m_compositionEditBase);frame->preview=true;frame->geometrySequence=++m_compositionGeometry;frame->editSequence=m_compositionBeginSequence;m_compositionEditFrame=std::move(frame);emit frameChanged();}
     return true;

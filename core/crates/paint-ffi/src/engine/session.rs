@@ -1399,16 +1399,7 @@ impl Engine {
             )
             || liquify_control;
         let task_kind = match &command.operation {
-            Operation::TransformLayers(..) => PAINT_TASK_TRANSFORM,
-            Operation::Transform(
-                PAINT_TRANSFORM_BEGIN
-                | PAINT_TRANSFORM_UPDATE
-                | PAINT_TRANSFORM_COMMIT
-                | PAINT_TRANSFORM_CANCEL
-                | PAINT_TRANSFORM_UNDO
-                | PAINT_TRANSFORM_REDO,
-                _,
-            ) => PAINT_TASK_TRANSFORM,
+            Operation::Transform(PAINT_TRANSFORM_COMMIT, _) => PAINT_TASK_TRANSFORM,
             Operation::Liquify(PAINT_LIQUIFY_COMMIT, _) => PAINT_TASK_LIQUIFY,
             Operation::Transform(
                 PAINT_TRANSFORM_FLIP_IMAGE_HORIZONTAL

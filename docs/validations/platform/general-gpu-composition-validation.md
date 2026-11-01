@@ -1217,3 +1217,14 @@ DrawVerse 已有缓存三源、本地几何直发及 mip，但 `PaintCoreClient:
 `adaptive-mip-budget-build.txt`/`adaptive-mip-fixture-build.txt` Release 构建、生成头检查通过；`cargo fmt --manifest-path core/Cargo.toml --all --check` 与 `git diff --check` 通过。省略 `--all` 的首次 fmt 命令报无 targets，未记为通过。无 ABI 布局/文档格式变化。按用户要求只做定向验证，未跑总 check/四 ABI 全矩阵/新全量性能或同期 PhotoCraft 配对；复杂栈后备、真实驱动 OOM、实体输入与物理屏幕未测。预览缓存不表示确认/结束时原图计算已经加速。
 
 标准 `build/bin/Release/drawverse.exe` 已更新。独立 profile 的 D3D11 `--preview` 正常生成 `build/adaptive-mip-smoke.png` 后进程结束，stderr 为空；人工查看为完整窗口及三条正常笔触，未测实体交互。
+
+
+### 2026-11-01：确认专用进度与取消缓存恢复（用户纠偏）
+
+用户报告每次拖动出现“生成图像”，明确只有点完成才应显示。上一轮将 BEGIN/UPDATE/取消/历史纳入 TRANSFORM 进度范围过宽；本轮恢复只对 COMMIT 建立该任务，并删除 GUI 准备期的合成进度。独立 GUI 轮询及确认后原图交接提示保留。取消核心本身不重采样，但旧 GUI 保留变换后的缓存图直至主画布接管；本轮入队取消后同步恢复初始几何/原位源，关闭控制框，拒绝关闭期迟到 resident 包。该修正不跳过权威取消/事务保护。
+
+- `build/transform-commit-only-progress.txt`：完整 QML 两功能通过（4 passed 含 init/cleanup）。零延迟下进入/更新/检查点等待不显示进度；最终确认仍有实际工作计数/可见提示，GUI 心跳及多文档偏好归属保持。
+- `build/transform-cancel-commit-only-final.txt`：实际 D3D11 无选区普通、选区普通/Warp、8888×5000 小笔触选区四个取消功能通过（6 passed 含 init/cleanup）。均设进度延迟 0，经过连续本地输入和松手检查点，进入/拖动/检查点/取消全程不显示进度。取消函数返回前已恢复初始顶点及正确原位源，框立即隐藏、后续 UPDATE 拒绝；最终原图、原选区和历史恢复。UI 调用约 0.117–0.135ms；8888×5000 从调用到最终帧及显式 CPU 取样就绪记录 285ms，含测试轮询，不是实体输入/物理屏幕首帧，不据此承诺所有图层取消延迟。新增检查点前的初轮 `transform-cancel-restoration.txt` 也通过并保留。
+- `build/transform-cancel-progress-build.txt`、`transform-cancel-tests-build.txt`、`transform-cancel-progress-fixture-build.txt` 定向 Release 测试构建和生成头检查通过；fmt all/check、diff 空白检查通过。未跑总 check、四 ABI 或全性能矩阵。
+
+标准 `build/bin/Release/drawverse.exe` 被用户进程占用，`transform-commit-progress-build.txt` 保留 LNK1104，未关闭用户程序，标准 EXE 仍是上一轮版本。按构建系统现有链接参数将本轮静态核心/UI链接到同目录独立 `build/bin/Release/drawverse-transform-review.exe`，`transform-review-link.txt` exit0，SHA256 `985620B045887CAD05832E9C6711D7295FAF48EC8CAA3B308EC8E334C4EDDB34`。独立 profile D3D11 `--preview` exit0，stderr 空，`transform-cancel-smoke.png` 人工查看三条笔触及完整窗口正常。

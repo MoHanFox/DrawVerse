@@ -1235,14 +1235,17 @@ private slots:
         canvas->setClient(nullptr);QSignalSpy stopped(&client,&PaintCoreClient::stopped);client.shutdown();QTRY_COMPARE(stopped.size(),1);
     }
     void cachedTransformGeometrySession_data(){
-        QTest::addColumn<bool>("selected");QTest::addColumn<bool>("warp");QTest::addColumn<int>("close");
+        QTest::addColumn<bool>("selected");QTest::addColumn<bool>("warp");QTest::addColumn<int>("close");QTest::addColumn<QSize>("documentSize");
         for(bool selected:{false,true})for(bool warp:{false,true})for(int close=0;close<5;++close)
-            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(selected?"selected":"whole",warp?"warp":"affine").arg(close)))<<selected<<warp<<close;
+            QTest::newRow(qPrintable(QString("%1-%2-%3").arg(selected?"selected":"whole",warp?"warp":"affine").arg(close)))<<selected<<warp<<close<<QSize(2048,1024);
+        QTest::newRow("large-selected-cancel")<<true<<false<<0<<QSize(8888,5000);
     }
     void cachedTransformGeometrySession(){
-        QFETCH(bool,selected);QFETCH(bool,warp);QFETCH(int,close);QTemporaryDir temp;
+        QFETCH(bool,selected);QFETCH(bool,warp);QFETCH(int,close);QFETCH(QSize,documentSize);QTemporaryDir temp;
         PaintCoreClient client(nullptr,temp.filePath("cached-session.ini"));QTRY_VERIFY(client.ready() && client.brushLibraryReady());
-        client.newDocument(2048,1024);QTRY_VERIFY(client.documentWidth()==2048 && !client.layerEditBusy());
+        client.setLongTaskDelay(0);bool sawProgress=false;
+        connect(&client,&PaintCoreClient::computationProgressChanged,this,[&]{sawProgress|=client.longTaskVisible();});
+        client.newDocument(documentSize.width(),documentSize.height());QTRY_VERIFY(client.documentWidth()==documentSize.width() && !client.layerEditBusy());
         client.addLayer("blue");QTRY_VERIFY(client.layers().size()==2 && !client.layerEditBusy());
         client.setBrushColor(Qt::blue);client.setBrushRadius(12);InputSample sample;sample.position={200,200};
         const auto emptyDepth=client.undoDepth();QVERIFY(client.beginStroke(sample));client.endStroke();QTRY_COMPARE(client.undoDepth(),emptyDepth+1);
@@ -1275,9 +1278,21 @@ private slots:
             // Until confirmation, a sampler must refuse the stale original.
             QVERIFY(!client.sampleDocumentPixel(277,212).isValid());client.setCpuSamplingRequired(false);}
         if(close==4){client.setResidentGpuPreviewAvailable(false);QTRY_VERIFY(client.revision()>revision);QCOMPARE(client.transformPoints(),latest);}
-        const bool commit=close!=0;QVERIFY(client.finishTransform(commit));
+        const bool commit=close!=0;
+        if(!commit){QVERIFY(client.checkpointTransform());QTRY_VERIFY(!client.transformBusy());QTest::qWait(80);}
+        QVERIFY(!sawProgress);
+        const auto beforeCancel=client.residentPreview();QElapsedTimer closingClock;closingClock.start();
+        QVERIFY(client.finishTransform(commit));const auto closeCallMs=closingClock.nsecsElapsed()/1e6;
+        if(!commit){
+            // This must be true synchronously, before any actor acknowledgement.
+            QVERIFY(!client.transformControlsVisible());QVERIFY(!client.updateTransform(latest,warp,2));
+            const auto restored=client.residentPreview();QVERIFY(restored);
+            QVERIFY(QLineF(QPointF(restored->vertices.front()[0],restored->vertices.front()[1]),initial[0].toPointF()).length()<.01);
+            QCOMPARE(restored->sourceId,selected?beforeCancel->prepared->sourceId:beforeCancel->sourceId);
+        }
         QTRY_VERIFY_WITH_TIMEOUT(!client.transformActive() && !client.transformBusy() && !client.residentPreview(),15000);
         QTRY_VERIFY(rendered());QCOMPARE(client.undoDepth(),depth+(commit?1:0));
+        if(!commit){QVERIFY(!sawProgress);qInfo()<<"cancel cached restore call/final frame ms"<<closeCallMs<<closingClock.elapsed()<<"document"<<documentSize;}
         if(close==3){const auto picked=client.sampleDocumentPixel(277,212);QVERIFY(picked.isValid() && picked.blue()>200 && picked.red()<50);}
         if(commit){QVERIFY(client.frame()!=original);client.undo();QTRY_COMPARE(client.undoDepth(),depth);QTRY_VERIFY(rendered());}
         QCOMPARE(client.frame(),original);QCOMPARE(client.selectionSteps(),selection);QVERIFY2(client.lastError().isEmpty(),qPrintable(client.lastError()));
