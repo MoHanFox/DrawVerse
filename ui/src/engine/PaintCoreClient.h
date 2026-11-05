@@ -219,7 +219,7 @@ public:
     QString settingsFile() const { return m_settingsFile; }
     ~PaintCoreClient() override;
     QVariantMap computationProgress() const {return m_computationProgress;}
-    bool longTaskVisible() const {return !m_closing && m_computationProgress.value("state").toUInt()==1 && m_computationProgress.value("generation").toULongLong()==m_generation && m_computationProgress.value("elapsedMs").toULongLong()>=qulonglong(m_longTaskDelay);}
+    bool longTaskVisible() const {return !m_closing && m_computationProgress.value("state").toUInt()==1 && m_computationProgress.value("phase").toUInt()!=3 && m_computationProgress.value("generation").toULongLong()==m_generation && m_computationProgress.value("elapsedMs").toULongLong()>=qulonglong(m_longTaskDelay);}
     int longTaskDelay() const {return m_longTaskDelay;}
     QString tabletInputMode() const;
     QString tabletInputBackend() const;

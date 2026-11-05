@@ -1183,7 +1183,7 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
     // Read only atomic task counters on the GUI clock. Source preparation and
     // frame transfer can occupy the backend worker for seconds on large canvases.
     auto *progressTimer=new QTimer(this);progressTimer->setInterval(50);
-    connect(progressTimer,&QTimer::timeout,this,[this,handoffClock=QElapsedTimer{},handoffSequence=quint64(0),controlsVisible=false]() mutable {
+    connect(progressTimer,&QTimer::timeout,this,[this,controlsVisible=false]() mutable {
         if(m_closing)return;
         const bool visible=transformControlsVisible();
         if(visible!=controlsVisible){controlsVisible=visible;emit transformChanged();}
@@ -1192,15 +1192,8 @@ PaintCoreClient::PaintCoreClient(QObject *parent, const QString &settingsFile,st
         QVariantMap values{{"state",progress.state},{"kind",progress.kind},{"phase",progress.phase},{"status",progress.status},
             {"sequence",qulonglong(progress.sequence)},{"generation",qulonglong(progress.document_generation)},
             {"stage",qulonglong(progress.stage)},{"completed",qulonglong(progress.completed)},{"total",qulonglong(progress.total)},{"elapsedMs",qulonglong(progress.elapsed_ms)}};
-        // The actor can finish before the final full-resolution frame is ready.
-        // Keep an indeterminate finishing phase until that frame replaces the cache.
-        if(progress.state==PAINT_TASK_SUCCEEDED && progress.kind==PAINT_TASK_TRANSFORM &&
-           progress.document_generation==m_generation && progress.sequence==m_lastTransform &&
-           (m_transformClosing || (!m_transformActive && m_residentPreview && m_transformMeshPreview))){
-            if(handoffSequence!=progress.sequence){handoffSequence=progress.sequence;handoffClock.start();}
-            values["state"]=PAINT_TASK_RUNNING;values["phase"]=3;values["completed"]=0;values["total"]=0;
-            values["elapsedMs"]=qulonglong(progress.elapsed_ms+quint64(handoffClock.elapsed()));
-        }else{handoffSequence=0;handoffClock.invalidate();}
+        // Display adoption has its own lifetime. Never turn a completed task
+        // back into a running progress dialog while its last frame is adopted.
         if(m_computationProgress!=values){m_computationProgress=values;emit computationProgressChanged();}
     });progressTimer->start();
     connect(m_worker,&BackendWorker::storageState,this,[this](QVariantMap saved,QVariantMap active,QVariantMap info,QString message) {

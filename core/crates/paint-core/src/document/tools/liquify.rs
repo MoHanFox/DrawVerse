@@ -283,7 +283,6 @@ impl Document {
             .collect();
         let mut changes = Vec::new();
         let mut unchanged = Vec::new();
-        self.progress_stage(ComputationPhase::Comparing, keys.len());
         for key in keys {
             let before = state.original.tiles.get(&key);
             let after = current.tiles.get(&key);
@@ -310,7 +309,6 @@ impl Document {
             } else {
                 unchanged.push(key);
             }
-            self.progress_advance(1);
         }
         let original = state.original.clone();
         let focused = state.focus;

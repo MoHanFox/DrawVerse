@@ -339,8 +339,9 @@ impl Document {
         Ok(())
     }
     pub(super) fn stationary_primary(stroke: &Stroke, last: InputPoint, point: InputPoint) -> bool {
+        let pressure_changed = (point.pressure - last.pressure).abs() > (1. / 255.);
         (point.x - last.x).hypot(point.y - last.y) <= 1e-9
-            && point.pressure != last.pressure
+            && pressure_changed
             && ((stroke.wet.is_some()
                 && (stroke.program.tip.pressure_size || stroke.program.tip.pressure_flow))
                 || stroke.program.opacity_pressure(point.pressure).is_some()

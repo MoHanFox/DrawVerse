@@ -15,7 +15,8 @@ void standardPressure(QVariantMap &tip) {
     tip.remove("pressureDynamics");
 }
 void tipShape(QVariantMap &tip) {
-    if(!tip.value("maskResource").toString().isEmpty() || !tip.value("resource").toString().isEmpty())tip["hardness"]=1.;
+    // The preview uses the same source tip and hardness as the live brush;
+    // synthetic previews must not silently replace a soft tip with a hard one.
     auto device=tip.value("tipDynamics").toMap();
     if(device.isEmpty()){tip.remove("tipDynamics");return;}
     if(!device.value("tiltRoundness").toBool())device["minimumRoundness"]=.01;

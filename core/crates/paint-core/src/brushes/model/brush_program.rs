@@ -574,6 +574,28 @@ impl BrushProgram {
     fn procedural_coverage(&self, dx: f64, dy: f64, radius: f64) -> f32 {
         self.procedural_coverage_with_geometry(dx, dy, radius, self.base_geometry())
     }
+    fn procedural_shape(&self, radius: f64) -> (f64, f64) {
+        const SHAPE: [(f64, f64); 11] = [
+            (0.00, 0.664),
+            (0.14, 0.58),
+            (0.28, 0.50),
+            (0.40, 0.44),
+            (0.52, 0.36),
+            (0.63, 0.29),
+            (0.70, 0.24),
+            (0.78, 0.19),
+            (0.84, 0.15),
+            (0.89, 0.11),
+            (1.00, 0.0),
+        ];
+        let h = f64::from(self.tip.hardness.clamp(0., 1.)) * 10.;
+        let i = h.floor().min(9.) as usize;
+        let t = h - i as f64;
+        (
+            (SHAPE[i].0 + (SHAPE[i + 1].0 - SHAPE[i].0) * t) * radius,
+            (SHAPE[i].1 + (SHAPE[i + 1].1 - SHAPE[i].1) * t) * radius,
+        )
+    }
     pub(crate) fn extent(&self, radius: f64, geometry: TipGeometry) -> (f64, f64) {
         if let Some(mask) = &self.mask {
             let (w, h) = mask.dimensions();
@@ -587,7 +609,13 @@ impl BrushProgram {
                 geometry.sine.abs() * x + geometry.cosine.abs() * y,
             )
         } else {
-            (radius, radius)
+            let (_, shoulder) = self.procedural_shape(radius);
+            let reach = radius + 2.6 * shoulder;
+            let y = reach * f64::from(geometry.roundness);
+            (
+                geometry.cosine.abs() * reach + geometry.sine.abs() * y,
+                geometry.sine.abs() * reach + geometry.cosine.abs() * y,
+            )
         }
     }
     pub(crate) fn mask_dab_with_geometry(
@@ -629,19 +657,10 @@ impl BrushProgram {
         if radius <= 0. {
             return 0.;
         }
-        // Conservative circles stay at least half a pixel from the original AA/soft edge.
-        // Keep the original hypot arithmetic throughout the transition zone.
-        if geometry.roundness == 1. {
-            let squared = dx * dx + dy * dy;
-            let inner = (radius * f64::from(self.tip.hardness) - 1.).max(0.);
-            if inner > 0. && squared <= inner * inner {
-                return 1.;
-            }
-            let outer = radius + 1.;
-            if squared >= outer * outer {
-                return 0.;
-            }
-        }
+        // Use the PhotoCraft/Photoshop round-tip falloff: hardness controls a
+        // solid core and a Gaussian shoulder which is allowed to extend past
+        // the nominal radius. The extent calculation and coverage share this
+        // curve, so soft large brushes do not get clipped at the edge.
         let (distance, gradient) = if geometry.roundness == 1. {
             (dx.hypot(dy), 1.)
         } else {
@@ -656,24 +675,22 @@ impl BrushProgram {
             };
             (distance, gradient)
         };
-        // Keep the exact legacy arithmetic for hard round presets.
-        if self.tip.hardness == 1. && geometry.roundness == 1. {
-            return (radius + 0.5 - distance).clamp(0., 1.) as f32;
+        let (core, width) = self.procedural_shape(radius);
+        if distance <= core {
+            return 1.;
         }
-        let edge = ((radius - distance) / gradient + 0.5).clamp(0., 1.);
-        if self.tip.hardness == 1. {
-            return edge as f32;
+        let u = (distance - core) / width.max(0.25);
+        let mut g = (1. - (u * u) / 64.).clamp(0., 1.);
+        for _ in 0..6 {
+            g *= g;
         }
-        let soft = ((radius + 0.5 - distance)
-            / (radius * (1. - f64::from(self.tip.hardness))).max(0.5))
-        .clamp(0., 1.);
-        edge.min(soft) as f32
+        (g * gradient).clamp(0., 1.) as f32
     }
 }
 
 #[cfg(test)]
 #[test]
-fn conservative_circle_bounds_preserve_the_original_hypot_formula() {
+fn photocraft_round_tip_coverage_stays_bounded() {
     for radius in [0.001, 0.25, 0.5, 1., 3.7, 64., 128., 256.] {
         for hardness in [0., 0.1, 0.5, 0.99, 1.] {
             let definition = BrushDefinition {
@@ -691,19 +708,10 @@ fn conservative_circle_bounds_preserve_the_original_hypot_formula() {
                 let distance = (i % 137) as f64 / 136. * (radius + 2.);
                 let (dx, dy) = (distance * angle.cos(), distance * angle.sin());
                 let d = dx.hypot(dy);
-                let expected = if hardness == 1. {
-                    (radius + 0.5 - d).clamp(0., 1.) as f32
-                } else {
-                    let edge = (radius - d + 0.5).clamp(0., 1.);
-                    let soft = ((radius + 0.5 - d)
-                        / (radius * (1. - f64::from(hardness))).max(0.5))
-                    .clamp(0., 1.);
-                    edge.min(soft) as f32
-                };
-                assert_eq!(
-                    program.procedural_coverage(dx, dy, radius),
-                    expected,
-                    "r={radius} h={hardness} d={d}"
+                let coverage = program.procedural_coverage(dx, dy, radius);
+                assert!(
+                    coverage.is_finite() && (0. ..=1.).contains(&coverage),
+                    "r={radius} h={hardness} d={d} coverage={coverage}"
                 );
             }
         }
