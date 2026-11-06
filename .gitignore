@@ -10,4 +10,3 @@ __pycache__/
 /.idea/
 /cmake-build-*/
 /ui/cmake-build-*/
-/aqtinstall.log
